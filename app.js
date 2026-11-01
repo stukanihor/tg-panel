@@ -16,6 +16,13 @@ var filter = '';       // выбранная плитка на экране «С
 var shown  = null;     // документ, открытый в карточке
 var previews = {};     // кэш превью по ссылке на файл
 var shareOpen = false; // у открытого документа включён доступ по ссылке
+var navOwner  = null;  // раскрытый владелец в «Архиве»
+var navCat    = null;  // раскрытая папка
+
+var VIEWS = ['grid', 'list', 'compact'];
+var view  = 'list';
+try { if (VIEWS.indexOf(localStorage.getItem('view')) >= 0) view = localStorage.getItem('view'); }
+catch (e) {}
 
 var TITLES = {
   deadlines: ['Сроки',    'Что просрочено и что скоро истекает'],
@@ -210,15 +217,19 @@ function section(title, list, color){
   return h + '</div>';
 }
 
-function cardHtml(r, color, n){
+function cardHtml(r, color, n, showPath){
   var i = rows.indexOf(r);
-  var badge = '';
-  if (r.days !== null && r.until) {
-    if (r.days < 0)       badge = '<span class="badge red">' + Math.abs(r.days) + ' дн. назад</span>';
-    else if (r.days <= 60) badge = '<span class="badge amber">' + r.days + ' дн.</span>';
+  var badge = badgeHtml(r);
+
+  var sub;
+  if (showPath === false) {
+    // Внутри папки владелец и папка и так известны — показываем организацию.
+    sub = r.org || 'без организации';
+    if (r.until) sub += ' · до ' + r.until;
+  } else {
+    sub = r.owner + ' · ' + r.cat.replace(/^[\d.]+\s*/, '');
+    if (r.until) sub += ' · до ' + r.until;
   }
-  var sub = r.owner + ' · ' + r.cat.replace(/^[\d.]+\s*/, '');
-  if (r.until) sub += ' · до ' + r.until;
 
   return '<div class="card" data-i="' + i + '" style="animation-delay:' +
            Math.min(n * 28, 240) + 'ms">' +
@@ -229,33 +240,261 @@ function cardHtml(r, color, n){
          '</div>';
 }
 
-/* ── экран «Архив» ─────────────────────────────────────────────── */
+/* ── экран «Архив»: владелец → папка → документы ────────────── */
+function ownerOf(key){
+  for (var i = 0; i < OWNERS.length; i++) if (OWNERS[i].key === key) return OWNERS[i];
+  return null;
+}
+function catOf(ownerKey, catKey){
+  var l = CATS[ownerKey] || [];
+  for (var i = 0; i < l.length; i++) if (l[i].key === catKey) return l[i];
+  return null;
+}
+function docsIn(ownerLabel, catLabel){
+  return rows.filter(function(r){
+    return r.owner === ownerLabel && (catLabel === null || r.cat === catLabel);
+  });
+}
+function plural(n){
+  var t = n % 10, h = n % 100;
+  var w = (t === 1 && h !== 11) ? 'документ'
+        : (t >= 2 && t <= 4 && (h < 12 || h > 14)) ? 'документа' : 'документов';
+  return n + ' ' + w;
+}
+
 function drawList(query){
   var q = String(query || '').trim().toLowerCase();
-  var hit = rows.filter(function(r){
-    if (!q) return true;
-    return (r.name + ' ' + r.org + ' ' + r.number + ' ' + r.cat + ' ' +
-            r.owner + ' ' + r.note).toLowerCase().indexOf(q) !== -1;
-  });
 
-  var h = '';
-  if (!hit.length) {
-    h = '<div class="state">Ничего не нашлось.</div>';
-  } else {
-    var by = {};
-    hit.forEach(function(r){ (by[r.owner] = by[r.owner] || []).push(r); });
+  el('crumbs').innerHTML = crumbHtml(q);
+  bindCrumbs();
 
-    var n = 0;
-    Object.keys(by).sort().forEach(function(owner){
-      h += '<div class="group"><h2>' + esc(owner) + ' · ' + by[owner].length + '</h2>';
-      by[owner].forEach(function(r){ h += cardHtml(r, '', n++); });
-      h += '</div>';
+  var h = '', docs = false;
+
+  if (q) {
+    var hit = rows.filter(function(r){
+      return (r.name + ' ' + r.org + ' ' + r.number + ' ' + r.cat + ' ' +
+              r.owner + ' ' + r.note).toLowerCase().indexOf(q) !== -1;
     });
+    h = hit.length ? docsHtml(hit, true) : '<div class="state">Ничего не нашлось.</div>';
+    docs = true;
+  } else if (!navOwner) {
+    h = ownersHtml();
+  } else if (!navCat) {
+    h = foldersHtml(navOwner);
+  } else {
+    var o = ownerOf(navOwner), c = catOf(navOwner, navCat);
+    var list = (o && c) ? docsIn(o.label, c.label) : [];
+    h = list.length ? docsHtml(list, false)
+                    : '<div class="state">В этой папке пока пусто.</div>';
+    docs = true;
   }
 
-  el('list').innerHTML = h + trashHtml();
+  el('views').hidden = !docs;
+  el('list').innerHTML = h + ((q || navOwner) ? '' : trashHtml());
+
   bindCards();
   bindTrash();
+  bindFolders();
+  if (docs && view === 'grid') fillTiles();
+  if (el('s-archive').classList.contains('on')) updateHead('archive');
+  syncBack();
+}
+
+/* ── хлебные крошки ─────────────────────────────────────────── */
+function crumbHtml(q){
+  if (q) return '<span class="cr">Поиск по всему архиву</span>';
+
+  var h = '<span class="cr' + (navOwner ? ' lnk' : '') + '" data-lv="0">Архив</span>';
+  if (navOwner) {
+    var o = ownerOf(navOwner);
+    h += '<svg class="crsep" viewBox="0 0 24 24"><use href="#i-chev"/></svg>' +
+         '<span class="cr' + (navCat ? ' lnk' : '') + '" data-lv="1">' +
+         esc(o ? o.label : '') + '</span>';
+  }
+  if (navCat) {
+    var c = catOf(navOwner, navCat);
+    h += '<svg class="crsep" viewBox="0 0 24 24"><use href="#i-chev"/></svg>' +
+         '<span class="cr">' + esc(c ? c.label : '') + '</span>';
+  }
+  return h;
+}
+
+function bindCrumbs(){
+  Array.prototype.forEach.call(document.querySelectorAll('.cr.lnk'), function(c){
+    c.onclick = function(){
+      tap();
+      if (c.getAttribute('data-lv') === '0') { navOwner = null; navCat = null; }
+      else navCat = null;
+      drawList(el('q').value);
+    };
+  });
+}
+
+/* ── уровень 1: владельцы ───────────────────────────────────── */
+function ownersHtml(){
+  var h = '<div class="group">';
+  OWNERS.forEach(function(o, i){
+    var n = docsIn(o.label, null).length;
+    var f = (CATS[o.key] || []).length;
+    h += '<div class="card nav" data-o="' + esc(o.key) + '" style="animation-delay:' +
+         Math.min(i * 30, 200) + 'ms">' +
+         icon('i-folder') +
+         '<div class="body"><div class="t">' + esc(o.label) + '</div>' +
+         '<div class="s">' + f + ' папок · ' + plural(n) + '</div></div>' +
+         '<span class="chev"><svg viewBox="0 0 24 24"><use href="#i-chev"/></svg></span></div>';
+  });
+  return h + '</div>';
+}
+
+/* ── уровень 2: папки владельца ─────────────────────────────── */
+function foldersHtml(ok){
+  var o = ownerOf(ok);
+  if (!o) return '';
+
+  var list = CATS[ok] || [];
+  var h = '<div class="group">';
+
+  list.forEach(function(c, i){
+    var n = docsIn(o.label, c.label).length;
+    h += '<div class="card nav" data-c="' + esc(c.key) + '" style="animation-delay:' +
+         Math.min(i * 24, 200) + 'ms">' +
+         icon(catIcon(c.label)) +
+         '<div class="body"><div class="t">' + esc(c.label) + '</div>' +
+         '<div class="s">' + plural(n) + '</div></div>' +
+         '<button class="dots" data-m="' + esc(c.key) + '" aria-label="Что сделать с папкой">' +
+         '<svg viewBox="0 0 24 24"><use href="#i-dots"/></svg></button></div>';
+  });
+
+  return h + '</div><button class="btn ghost" id="newFolder">Новая папка</button>';
+}
+
+/* ── уровень 3: документы, три вида ─────────────────────────── */
+function docsHtml(list, showPath){
+  if (view === 'grid')    return tilesHtml(list, showPath);
+  if (view === 'compact') return compactHtml(list, showPath);
+
+  var h = '<div class="group">';
+  list.forEach(function(r, n){ h += cardHtml(r, '', n, showPath); });
+  return h + '</div>';
+}
+
+function pathOf(r){ return r.owner + ' · ' + r.cat.replace(/^[\d.]+\s*/, ''); }
+
+function tilesHtml(list, showPath){
+  var h = '<div class="tiles">';
+  list.forEach(function(r, n){
+    var i = rows.indexOf(r);
+    h += '<div class="tile" data-i="' + i + '"' +
+         (r.link ? ' data-link="' + esc(r.link) + '"' : '') +
+         ' style="animation-delay:' + Math.min(n * 26, 240) + 'ms">' +
+         '<div class="shot">' + icon(catIcon(r.cat)) + '</div>' +
+         '<div class="cap"><div class="t">' + esc(r.name) + '</div>' +
+         '<div class="s">' + esc(showPath ? pathOf(r) : (r.until ? 'до ' + r.until : 'бессрочный')) +
+         '</div></div>' + badgeHtml(r) + '</div>';
+  });
+  return h + '</div>';
+}
+
+function compactHtml(list, showPath){
+  var h = '<div class="rowsbox">';
+  list.forEach(function(r, n){
+    var i = rows.indexOf(r);
+    h += '<div class="line" data-i="' + i + '" style="animation-delay:' +
+         Math.min(n * 14, 180) + 'ms">' +
+         '<span class="nm">' + esc(r.name) + '</span>' +
+         (showPath ? '<span class="pt">' + esc(pathOf(r)) + '</span>' : '') +
+         badgeHtml(r) + '</div>';
+  });
+  return h + '</div>';
+}
+
+function badgeHtml(r){
+  if (r.days === null || !r.until) return '';
+  if (r.days < 0)  return '<span class="badge red">' + Math.abs(r.days) + ' дн. назад</span>';
+  if (r.days <= 60) return '<span class="badge amber">' + r.days + ' дн.</span>';
+  return '';
+}
+
+/* Превью в плитках тянем по одному: каждое — отдельный запрос к Drive. */
+var tileRun = 0;
+function fillTiles(){
+  var run  = ++tileRun;
+  var todo = Array.prototype.slice.call(document.querySelectorAll('.tile[data-link]'));
+
+  (function next(){
+    if (run !== tileRun) return;
+    var t = todo.shift();
+    if (!t) return;
+
+    var link = t.getAttribute('data-link');
+    if (previews[link]) { paintTile(t, previews[link]); return next(); }
+
+    callApi({ api: 'preview', init: initData(), link: link })
+      .then(function(res){
+        if (run !== tileRun) return;
+        if (res && res.ok) {
+          previews[link] = 'data:' + res.mime + ';base64,' + res.b64;
+          paintTile(t, previews[link]);
+        }
+        next();
+      })
+      .catch(function(){ if (run === tileRun) next(); });
+  })();
+}
+
+function paintTile(t, src){
+  var shot = t.querySelector('.shot');
+  if (shot) shot.innerHTML = '<img src="' + src + '" alt="">';
+}
+
+/* ── переключатель вида ───────────────────────────────────── */
+function syncViews(){
+  Array.prototype.forEach.call(document.querySelectorAll('#views button'), function(b){
+    b.classList.toggle('on', b.getAttribute('data-v') === view);
+  });
+}
+Array.prototype.forEach.call(document.querySelectorAll('#views button'), function(b){
+  b.onclick = function(){
+    tap();
+    view = b.getAttribute('data-v');
+    try { localStorage.setItem('view', view); } catch (e) {}
+    syncViews();
+    drawList(el('q').value);
+  };
+});
+syncViews();
+
+/* ── переходы по папкам и меню папки ────────────────────────── */
+function bindFolders(){
+  Array.prototype.forEach.call(document.querySelectorAll('.card[data-o]'), function(c){
+    c.onclick = function(){
+      tap();
+      navOwner = c.getAttribute('data-o');
+      navCat   = null;
+      drawList('');
+      el('scroll').scrollTop = 0;
+    };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.card[data-c]'), function(c){
+    c.onclick = function(){
+      tap();
+      navCat = c.getAttribute('data-c');
+      drawList('');
+      el('scroll').scrollTop = 0;
+    };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.dots'), function(b){
+    b.onclick = function(ev){
+      ev.stopPropagation();
+      tap();
+      folderSheet(navOwner, b.getAttribute('data-m'));
+    };
+  });
+
+  var add = el('newFolder');
+  if (add) add.onclick = function(){ tap(); newFolderSheet(navOwner); };
 }
 
 /* ── корзина: свёрнутый список внизу «Архива» ──────────────────── */
@@ -325,9 +564,18 @@ function say(msg){
 
 /* ── карточка документа ────────────────────────────────────────── */
 function bindCards(){
-  Array.prototype.forEach.call(document.querySelectorAll('.card'), function(c){
+  var sel = '.card[data-i], .tile[data-i], .line[data-i]';
+  Array.prototype.forEach.call(document.querySelectorAll(sel), function(c){
     c.onclick = function(){ tap(); openSheet(rows[Number(c.getAttribute('data-i'))]); };
   });
+}
+
+function showSheet(html){
+  el('sheet').innerHTML = html;
+  el('scrim').classList.add('on');
+  document.body.classList.add('sheet-open');
+  el('sheet').scrollTop = 0;
+  syncBack();
 }
 
 function kv(k, v){
@@ -358,15 +606,233 @@ function openSheet(r){
     (r.link ? '<a class="act" href="' + esc(r.link) + '" target="_blank">' +
               '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть файл</a>' : '') +
     (r.link ? '<button class="btn ghost" id="s_share">Поделиться</button>' : '') +
+    '<button class="btn ghost" id="s_move">Переместить</button>' +
     '<button class="btn danger" id="s_del">Удалить из архива</button>';
 
   if (r.link) el('s_share').onclick = function(){ tap(); drawShare(r); };
-  el('s_del').onclick = function(){ askDelete(r); };
+  el('s_move').onclick = function(){ tap(); moveSheet(r); };
+  el('s_del').onclick  = function(){ askDelete(r); };
   if (r.link) loadPreview(r);
 
   el('scrim').classList.add('on');
   document.body.classList.add('sheet-open');
-  if (tg && tg.BackButton) { tg.BackButton.show(); }
+  el('sheet').scrollTop = 0;
+  syncBack();
+}
+
+/* ── перенос документа в другую папку ───────────────────────── */
+function ownerOpts(){
+  return OWNERS.map(function(o){ return { v: o.key, t: o.label }; });
+}
+function catOpts(ownerKey){
+  return (CATS[ownerKey] || []).map(function(c){ return { v: c.key, t: c.label }; });
+}
+
+function moveSheet(r, pickedOwner){
+  var o  = OWNERS.filter(function(x){ return x.label === r.owner; })[0];
+  var ok = pickedOwner || (o ? o.key : (OWNERS[0] ? OWNERS[0].key : ''));
+
+  showSheet(
+    '<div class="grab"></div>' +
+    '<h3>Переместить</h3>' +
+    '<div class="sub">' + esc(r.name) + '</div>' +
+    '<div class="hint" style="margin-bottom:18px">Сейчас: ' +
+      esc(r.owner + ' → ' + r.cat) + '</div>' +
+    '<div id="mvmsg"></div>' +
+    picker('mv_owner', 'Кому', ownerOpts(), ok) +
+    picker('mv_cat',   'Папка', catOpts(ok), '') +
+    '<button class="btn primary" id="mv_go">Перенести</button>' +
+    '<button class="btn ghost" id="mv_back">Назад</button>');
+
+  el('mv_owner').onchange = function(){ moveSheet(r, this.value); };
+  el('mv_back').onclick   = function(){ tap(); openSheet(r); };
+  el('mv_go').onclick     = function(){
+    var ownerKey = el('mv_owner').value;
+    var catKey   = el('mv_cat').value;
+    if (!ownerKey || !catKey) { say('Выбери папку, куда переносим.'); return; }
+
+    tap();
+    el('mv_go').disabled = true;
+    el('mvmsg').innerHTML = '<div class="notice">Переношу…</div>';
+
+    callApi({ api: 'move', init: initData(), link: r.link, name: r.name,
+              owner: ownerKey, cat: catKey })
+      .then(function(res){
+        if (!res || !res.ok) {
+          el('mv_go').disabled = false;
+          el('mvmsg').innerHTML = '<div class="notice bad">' +
+            esc(res && res.error || 'нет ответа') + '</div>';
+          return;
+        }
+        closeSheet();
+        tap('medium');
+        boot();
+      })
+      .catch(function(e){
+        el('mv_go').disabled = false;
+        el('mvmsg').innerHTML = '<div class="notice bad">' + esc(e.message || e) + '</div>';
+      });
+  };
+}
+
+/* ── новая папка ────────────────────────────────────────────── */
+function newFolderSheet(ownerKey){
+  var o = ownerOf(ownerKey);
+  showSheet(
+    '<div class="grab"></div>' +
+    '<h3>Новая папка</h3>' +
+    '<div class="sub">' + esc(o ? o.label : '') + '</div>' +
+    '<div id="nfmsg"></div>' +
+    '<div class="field"><label>Название</label>' +
+      '<input id="nf_name" placeholder="например, 1.7 Банк" autocomplete="off"></div>' +
+    '<div class="hint">Папка появится и в приложении, и на Drive — внутри папки владельца.</div>' +
+    '<button class="btn primary" id="nf_go">Создать</button>' +
+    '<button class="btn ghost" id="nf_no">Отмена</button>');
+
+  el('nf_no').onclick = function(){ tap(); closeSheet(); };
+  el('nf_go').onclick = function(){
+    var name = el('nf_name').value.trim();
+    if (!name) { say('Впиши название папки.'); return; }
+
+    tap();
+    el('nf_go').disabled = true;
+    el('nfmsg').innerHTML = '<div class="notice">Создаю…</div>';
+
+    callApi({ api: 'folderNew', init: initData(), owner: ownerKey, name: name })
+      .then(function(res){
+        if (!res || !res.ok) {
+          el('nf_go').disabled = false;
+          el('nfmsg').innerHTML = '<div class="notice bad">' +
+            esc(res && res.error || 'нет ответа') + '</div>';
+          return;
+        }
+        CATS = res.cats || CATS;
+        closeSheet();
+        tap('medium');
+        drawList('');
+      })
+      .catch(function(e){
+        el('nf_go').disabled = false;
+        el('nfmsg').innerHTML = '<div class="notice bad">' + esc(e.message || e) + '</div>';
+      });
+  };
+}
+
+/* ── папка: переименовать или удалить ─────────────────────────── */
+function folderSheet(ownerKey, catKey, moveTo){
+  var o = ownerOf(ownerKey), c = catOf(ownerKey, catKey);
+  if (!o || !c) return;
+
+  var n = docsIn(o.label, c.label).length;
+
+  showSheet(
+    '<div class="grab"></div>' +
+    '<h3>' + esc(c.label) + '</h3>' +
+    '<div class="sub">' + esc(o.label) + ' · ' + plural(n) + '</div>' +
+    '<div id="fdmsg"></div>' +
+    '<div class="field"><label>Название папки</label>' +
+      '<input id="fd_name" value="' + esc(c.label) + '" autocomplete="off"></div>' +
+    '<button class="btn primary" id="fd_ren">Переименовать</button>' +
+    '<div class="hint">Папка переименуется и на Drive, и во всех записях реестра.</div>' +
+    '<div id="fdkill"></div>' +
+    '<button class="btn ghost" id="fd_back">Назад</button>');
+
+  el('fd_back').onclick = function(){ tap(); closeSheet(); };
+
+  el('fd_ren').onclick = function(){
+    var name = el('fd_name').value.trim();
+    if (!name) { say('Название не может быть пустым.'); return; }
+
+    tap();
+    el('fd_ren').disabled = true;
+    el('fdmsg').innerHTML = '<div class="notice">Переименовываю…</div>';
+
+    callApi({ api: 'folderRen', init: initData(),
+              owner: ownerKey, cat: catKey, name: name })
+      .then(function(res){
+        if (!res || !res.ok) {
+          el('fd_ren').disabled = false;
+          el('fdmsg').innerHTML = '<div class="notice bad">' +
+            esc(res && res.error || 'нет ответа') + '</div>';
+          return;
+        }
+        CATS = res.cats || CATS;
+        closeSheet();
+        tap('medium');
+        boot();
+      })
+      .catch(function(e){
+        el('fd_ren').disabled = false;
+        el('fdmsg').innerHTML = '<div class="notice bad">' + esc(e.message || e) + '</div>';
+      });
+  };
+
+  drawKill(ownerKey, catKey, n, moveTo);
+}
+
+/* Блок удаления: если в папке что-то есть — сначала спрашиваем, куда перенести. */
+function drawKill(ownerKey, catKey, n, moveTo){
+  var box = el('fdkill');
+  if (!box) return;
+
+  if (!n) {
+    box.innerHTML = '<button class="btn danger" id="fd_del">Удалить папку</button>';
+    el('fd_del').onclick = function(){ killFolder(ownerKey, catKey, '', ''); };
+    return;
+  }
+
+  var to = moveTo || (OWNERS[0] ? OWNERS[0].key : '');
+  box.innerHTML =
+    '<div class="swrow" style="display:block">' +
+      '<b style="display:block;font-size:14.5px">Удалить папку</b>' +
+      '<span style="display:block;color:var(--muted);font-size:12.5px;line-height:1.45;margin:3px 0 14px">' +
+        'В папке ' + plural(n) + '. Выбери, куда их перенести — после переноса папка удалится.' +
+      '</span>' +
+      picker('fd_towner', 'Перенести к', ownerOpts(), to) +
+      picker('fd_tocat',  'В папку',     catOpts(to), '') +
+      '<button class="btn danger" id="fd_del">Перенести и удалить</button>' +
+    '</div>';
+
+  el('fd_towner').onchange = function(){ drawKill(ownerKey, catKey, n, this.value); };
+  el('fd_del').onclick = function(){
+    var tOwner = el('fd_towner').value, tCat = el('fd_tocat').value;
+    if (!tOwner || !tCat) { say('Выбери, куда перенести документы.'); return; }
+    killFolder(ownerKey, catKey, tOwner, tCat);
+  };
+}
+
+function killFolder(ownerKey, catKey, toOwner, toCat){
+  var c = catOf(ownerKey, catKey);
+  var msg = 'Удалить папку «' + (c ? c.label : '') + '»?' +
+            (toCat ? '\n\nДокументы сначала переедут в выбранную папку.' : '');
+
+  function go(){
+    tap('medium');
+    el('fdmsg').innerHTML = '<div class="notice">Удаляю…</div>';
+
+    callApi({ api: 'folderDel', init: initData(), owner: ownerKey, cat: catKey,
+              toOwner: toOwner || '', toCat: toCat || '' })
+      .then(function(res){
+        if (!res || !res.ok) {
+          el('fdmsg').innerHTML = '<div class="notice bad">' +
+            esc(res && res.error || 'нет ответа') + '</div>';
+          return;
+        }
+        CATS   = res.cats || CATS;
+        navCat = null;
+        closeSheet();
+        tap('medium');
+        boot();
+      })
+      .catch(function(e){
+        el('fdmsg').innerHTML = '<div class="notice bad">' + esc(e.message || e) + '</div>';
+      });
+  }
+
+  if (tg && tg.showConfirm) {
+    try { tg.showConfirm(msg, function(yes){ if (yes) go(); }); return; } catch (e) {}
+  }
+  if (confirm(msg)) go();
 }
 
 /* ── превью первой страницы ────────────────────────────────────── */
@@ -570,11 +1036,25 @@ function closeSheet(){
   shown = null;
   el('scrim').classList.remove('on');
   document.body.classList.remove('sheet-open');
-  if (tg && tg.BackButton) tg.BackButton.hide();
+  syncBack();
+}
+
+/* Системная «Назад» в Telegram: сначала закрывает шторку,
+   потом поднимает на уровень выше по папкам. */
+function goBack(){
+  if (document.body.classList.contains('sheet-open')) { closeSheet(); return; }
+  if (navCat)   { navCat   = null; drawList(el('q').value); return; }
+  if (navOwner) { navOwner = null; drawList(el('q').value); return; }
+}
+
+function syncBack(){
+  if (!tg || !tg.BackButton) return;
+  var need = document.body.classList.contains('sheet-open') || !!navOwner;
+  try { need ? tg.BackButton.show() : tg.BackButton.hide(); } catch (e) {}
 }
 
 el('scrim').onclick = function(ev){ if (ev.target.id === 'scrim') closeSheet(); };
-if (tg && tg.BackButton) tg.BackButton.onClick(closeSheet);
+if (tg && tg.BackButton) tg.BackButton.onClick(goBack);
 
 /* ── экран «Вопрос» ────────────────────────────────────────────── */
 el('chips').innerHTML = HINTS.map(function(t){
@@ -785,7 +1265,12 @@ function updateHead(name){
       ? 'Требуют внимания: ' + c.over
       : (c.soon ? 'Скоро истекает: ' + c.soon : 'Всё в порядке, ' + rows.length + ' документов');
   } else if (name === 'archive' && rows.length) {
-    el('subtitle').textContent = rows.length + ' документов в архиве';
+    var o = navOwner ? ownerOf(navOwner) : null;
+    var c = (o && navCat) ? catOf(navOwner, navCat) : null;
+    el('subtitle').textContent =
+      c ? plural(docsIn(o.label, c.label).length)
+        : o ? ((CATS[o.key] || []).length + ' папок · ' + plural(docsIn(o.label, null).length))
+            : plural(rows.length) + ' в архиве';
   } else {
     el('subtitle').textContent = t[1];
   }
@@ -795,6 +1280,12 @@ Array.prototype.forEach.call(document.querySelectorAll('nav button'), function(b
   b.onclick = function(){
     tap();
     var name = b.getAttribute('data-s');
+
+    // Повторный тап по вкладке «Архив» поднимает в самый верх.
+    if (name === 'archive' && b.classList.contains('on')) {
+      navOwner = null; navCat = null; el('q').value = ''; drawList('');
+    }
+
     Array.prototype.forEach.call(document.querySelectorAll('nav button'), function(x){
       x.classList.toggle('on', x === b);
     });
