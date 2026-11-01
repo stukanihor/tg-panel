@@ -236,6 +236,7 @@ function cardHtml(r, color, n, showPath){
            icon(catIcon(r.cat), color || '') +
            '<div class="body"><div class="t">' + esc(r.name) + '</div>' +
            '<div class="s">' + esc(sub) + '</div></div>' +
+           (r.fav ? '<span class="star"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg></span>' : '') +
            (badge || '<span class="chev"><svg viewBox="0 0 24 24"><use href="#i-chev"/></svg></span>') +
          '</div>';
 }
@@ -278,9 +279,14 @@ function drawList(query){
     h = hit.length ? docsHtml(hit, true) : '<div class="state">Ничего не нашлось.</div>';
     docs = true;
   } else if (!navOwner) {
-    h = ownersHtml();
+    h = favHtml() + ownersHtml();
   } else if (!navCat) {
     h = foldersHtml(navOwner);
+  } else if (navCat === LOSTCAT) {
+    var lost = lostDocs(navOwner);
+    h = lost.length ? docsHtml(lost, false)
+                    : '<div class="state">Здесь пусто.</div>';
+    docs = true;
   } else {
     var o = ownerOf(navOwner), c = catOf(navOwner, navCat);
     var list = (o && c) ? docsIn(o.label, c.label) : [];
@@ -312,7 +318,7 @@ function crumbHtml(q){
          esc(o ? o.label : '') + '</span>';
   }
   if (navCat) {
-    var c = catOf(navOwner, navCat);
+    var c = navCat === LOSTCAT ? { label: 'Без папки' } : catOf(navOwner, navCat);
     h += '<svg class="crsep" viewBox="0 0 24 24"><use href="#i-chev"/></svg>' +
          '<span class="cr">' + esc(c ? c.label : '') + '</span>';
   }
@@ -331,6 +337,28 @@ function bindCrumbs(){
 }
 
 /* ── уровень 1: владельцы ── */
+function favHtml(){
+  var list = rows.filter(function(r){ return r.fav; });
+  if (!list.length) return '';
+
+  var h = '<div class="group"><h2><svg viewBox="0 0 24 24"><use href="#i-star"/></svg>' +
+          'Избранное · ' + list.length + '</h2>';
+  list.forEach(function(r, n){ h += cardHtml(r, 'amber', n, true); });
+  return h + '</div>';
+}
+
+/* Документы, чья папка в реестре не совпала ни с одной настоящей папкой.
+   Без этого они пропадают из навигации, хотя в счётчике владельца видны. */
+var LOSTCAT = '__lost__';
+
+function lostDocs(ownerKey){
+  var o = ownerOf(ownerKey);
+  if (!o) return [];
+  var known = {};
+  (CATS[ownerKey] || []).forEach(function(c){ known[c.label] = 1; });
+  return docsIn(o.label, null).filter(function(r){ return !known[r.cat]; });
+}
+
 function ownersHtml(){
   var h = '<div class="group">';
   OWNERS.forEach(function(o, i){
@@ -366,6 +394,14 @@ function foldersHtml(ok){
          '<svg viewBox="0 0 24 24"><use href="#i-dots"/></svg></button></div>';
   });
 
+  var lost = lostDocs(ok);
+  if (lost.length) {
+    h += '<div class="card nav" data-lost="1">' + icon('i-doc', 'amber') +
+         '<div class="body"><div class="t">Без папки</div>' +
+         '<div class="s">' + plural(lost.length) + ' · папка не найдена</div></div>' +
+         '<span class="chev"><svg viewBox="0 0 24 24"><use href="#i-chev"/></svg></span></div>';
+  }
+
   return h + '</div>' +
     '<div class="tip">Папку можно перетащить выше или ниже — номера ' +
     'пересчитаются сами.</div>' +
@@ -394,7 +430,7 @@ function tilesHtml(list, showPath){
          '<div class="shot">' + icon(catIcon(r.cat)) + '</div>' +
          '<div class="cap"><div class="t">' + esc(r.name) + '</div>' +
          '<div class="s">' + esc(showPath ? pathOf(r) : (r.until ? 'до ' + r.until : 'бессрочный')) +
-         '</div></div>' + badgeHtml(r) + '</div>';
+         '</div></div>' + badgeHtml(r) + (r.fav ? '<span class="star"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg></span>' : '') + '</div>';
   });
   return h + '</div>';
 }
@@ -407,7 +443,7 @@ function compactHtml(list, showPath){
          Math.min(n * 14, 180) + 'ms">' +
          '<span class="nm">' + esc(r.name) + '</span>' +
          (showPath ? '<span class="pt">' + esc(pathOf(r)) + '</span>' : '') +
-         badgeHtml(r) + '</div>';
+         (r.fav ? '<span class="star"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg></span>' : '') + badgeHtml(r) + '</div>';
   });
   return h + '</div>';
 }
@@ -475,6 +511,15 @@ function bindFolders(){
       tap();
       navOwner = c.getAttribute('data-o');
       navCat   = null;
+      drawList('');
+      el('scroll').scrollTop = 0;
+    };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.card[data-lost]'), function(c){
+    c.onclick = function(){
+      tap();
+      navCat = LOSTCAT;
       drawList('');
       el('scroll').scrollTop = 0;
     };
@@ -611,11 +656,15 @@ function openSheet(r){
     (r.note ? '<div class="memo">' + esc(r.note) + '</div>' : '') +
     (r.link ? '<a class="act" href="' + esc(r.link) + '" target="_blank">' +
               '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть файл</a>' : '') +
+    favBtn(r) +
     (r.link ? '<button class="btn ghost" id="s_share">Поделиться</button>' : '') +
+    '<button class="btn ghost" id="s_edit">Изменить</button>' +
     '<button class="btn ghost" id="s_move">Переместить</button>' +
     '<button class="btn danger" id="s_del">Удалить из архива</button>';
 
   if (r.link) el('s_share').onclick = function(){ tap(); drawShare(r); };
+  el('s_fav').onclick  = function(){ toggleFav(r); };
+  el('s_edit').onclick = function(){ tap(); editSheet(r); };
   el('s_move').onclick = function(){ tap(); moveSheet(r); };
   el('s_del').onclick  = function(){ askDelete(r); };
   if (r.link) loadPreview(r);
@@ -626,7 +675,94 @@ function openSheet(r){
   syncBack();
 }
 
+/* ── правка карточки ── */
+function editSheet(r){
+  showSheet(
+    '<div class="grab"></div>' +
+    '<h3>Изменить</h3>' +
+    '<div class="sub">' + esc(r.owner + ' → ' + r.cat) + '</div>' +
+    '<div id="edmsg"></div>' +
+    field('e_name', 'Название документа', r.name) +
+    field('e_org',  'Организация',        r.org) +
+    field('e_num',  'Номер',              r.number) +
+    '<div class="two">' +
+      field('e_issue', 'Дата выдачи',  r.issued, 'date') +
+      field('e_exp',   'Действует до', r.until,  'date') +
+    '</div>' +
+    '<div class="field"><label>Заметка</label><textarea id="e_note">' +
+      esc(r.note || '') + '</textarea></div>' +
+    '<div class="hint">Владельца и папку меняет «Переместить». Имя файла ' +
+      'на Drive пересоберётся из даты, владельца и нового названия.</div>' +
+    '<button class="btn primary" id="e_go">Сохранить</button>' +
+    '<button class="btn ghost" id="e_back">Назад</button>');
+
+  el('e_back').onclick = function(){ tap(); openSheet(r); };
+  el('e_go').onclick   = function(){
+    var name = el('e_name').value.trim();
+    if (!name) { say('Название не может быть пустым.'); return; }
+
+    tap();
+    el('e_go').disabled = true;
+    el('edmsg').innerHTML = '<div class="notice">Сохраняю…</div>';
+
+    callApi({ api: 'edit', init: initData(), link: r.link, name: r.name,
+              newName: name,
+              org:     el('e_org').value.trim(),
+              number:  el('e_num').value.trim(),
+              issue:   el('e_issue').value,
+              expiry:  el('e_exp').value,
+              note:    el('e_note').value.trim() })
+      .then(function(res){
+        if (!res || !res.ok) {
+          el('e_go').disabled = false;
+          el('edmsg').innerHTML = '<div class="notice bad">' +
+            esc(res && res.error || 'нет ответа') + '</div>';
+          return;
+        }
+        // Превью кэшируется по ссылке, а она могла смениться вместе с именем.
+        if (r.link) delete previews[r.link];
+        closeSheet();
+        tap('medium');
+        boot();
+      })
+      .catch(function(e){
+        el('e_go').disabled = false;
+        el('edmsg').innerHTML = '<div class="notice bad">' + esc(e.message || e) + '</div>';
+      });
+  };
+}
+
 /* ── перенос документа в другую папку ── */
+function favBtn(r){
+  return '<button class="btn ghost favbtn' + (r.fav ? ' on' : '') + '" id="s_fav">' +
+         '<svg viewBox="0 0 24 24"><use href="#i-star"/></svg>' +
+         '<span>' + (r.fav ? 'В избранном' : 'В избранное') + '</span></button>';
+}
+
+function toggleFav(r){
+  var want = !r.fav;
+  var b    = el('s_fav');
+  tap('medium');
+  b.disabled = true;
+
+  callApi({ api: 'star', init: initData(), link: r.link, name: r.name, on: want ? 1 : 0 })
+    .then(function(res){
+      b.disabled = false;
+      if (!res || !res.ok) {
+        say('Не вышло: ' + (res && res.error || 'нет ответа'));
+        return;
+      }
+      r.fav = want;
+      b.classList.toggle('on', want);
+      b.querySelector('span').textContent = want ? 'В избранном' : 'В избранное';
+      drawList(el('q').value);
+      drawDeadlines();
+    })
+    .catch(function(e){ b.disabled = false; say(e.message || String(e)); });
+}
+
+var NEWCAT = '__new__';   // служебное значение пункта «Новая папка»
+
 function ownerOpts(){
   return OWNERS.map(function(o){ return { v: o.key, t: o.label }; });
 }
@@ -646,30 +782,61 @@ function moveSheet(r, pickedOwner){
       esc(r.owner + ' → ' + r.cat) + '</div>' +
     '<div id="mvmsg"></div>' +
     picker('mv_owner', 'Кому', ownerOpts(), ok) +
-    picker('mv_cat',   'Папка', catOpts(ok), '') +
+    picker('mv_cat',   'Папка',
+           catOpts(ok).concat([{ v: NEWCAT, t: '+ Новая папка…' }]), '') +
+    '<div class="field" id="mv_newbox" hidden><label>Название новой папки</label>' +
+      '<input id="mv_newname" placeholder="например, 1.7 Банк" autocomplete="off"></div>' +
     '<button class="btn primary" id="mv_go">Перенести</button>' +
     '<button class="btn ghost" id="mv_back">Назад</button>');
 
   el('mv_owner').onchange = function(){ moveSheet(r, this.value); };
   el('mv_back').onclick   = function(){ tap(); openSheet(r); };
-  el('mv_go').onclick     = function(){
+
+  el('mv_cat').onchange = function(){
+    var box = el('mv_newbox');
+    box.hidden = this.value !== NEWCAT;
+    if (!box.hidden) el('mv_newname').focus();
+  };
+
+  el('mv_go').onclick = function(){
     var ownerKey = el('mv_owner').value;
     var catKey   = el('mv_cat').value;
     if (!ownerKey || !catKey) { say('Выбери папку, куда переносим.'); return; }
 
+    // Новую папку заводим тем же запросом, что и на экране папок,
+    // и только потом переносим в неё файл.
+    var fresh = '';
+    if (catKey === NEWCAT) {
+      fresh = el('mv_newname').value.trim();
+      if (!fresh) { say('Впиши название новой папки.'); return; }
+    }
+
     tap();
     el('mv_go').disabled = true;
-    el('mvmsg').innerHTML = '<div class="notice">Переношу…</div>';
+    el('mvmsg').innerHTML = '<div class="notice">' +
+      (fresh ? 'Создаю папку…' : 'Переношу…') + '</div>';
 
-    callApi({ api: 'move', init: initData(), link: r.link, name: r.name,
-              owner: ownerKey, cat: catKey })
+    var ready = fresh
+      ? callApi({ api: 'folderNew', init: initData(), owner: ownerKey, name: fresh })
+          .then(function(res){
+            if (!res || !res.ok) throw new Error(res && res.error || 'не вышло создать папку');
+            CATS = res.cats || CATS;
+            var made = (CATS[ownerKey] || []).filter(function(c){
+              return c.label === fresh;
+            })[0];
+            if (!made) throw new Error('папка создалась, но не нашлась в списке');
+            el('mvmsg').innerHTML = '<div class="notice">Переношу…</div>';
+            return made.key;
+          })
+      : Promise.resolve(catKey);
+
+    ready
+      .then(function(key){
+        return callApi({ api: 'move', init: initData(), link: r.link, name: r.name,
+                         owner: ownerKey, cat: key });
+      })
       .then(function(res){
-        if (!res || !res.ok) {
-          el('mv_go').disabled = false;
-          el('mvmsg').innerHTML = '<div class="notice bad">' +
-            esc(res && res.error || 'нет ответа') + '</div>';
-          return;
-        }
+        if (!res || !res.ok) throw new Error(res && res.error || 'нет ответа');
         closeSheet();
         tap('medium');
         boot();
