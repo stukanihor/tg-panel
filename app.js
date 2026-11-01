@@ -69,6 +69,21 @@ if (tg) {
   try { tg.setHeaderColor('secondary_bg_color'); } catch (e) {}
 }
 
+/* Высота окна в Telegram не равна window.innerHeight: часть кадра уходит
+   под панель приложения. Без этого низ страницы оказывается за экраном. */
+function fitViewport(){
+  var h = (tg && tg.viewportStableHeight) ? tg.viewportStableHeight
+        : (tg && tg.viewportHeight)       ? tg.viewportHeight
+        : window.innerHeight;
+  if (h > 0) document.documentElement.style.setProperty('--vh', h + 'px');
+}
+fitViewport();
+if (tg && tg.onEvent) {
+  try { tg.onEvent('viewportChanged', fitViewport); } catch (e) {}
+}
+window.addEventListener('resize', fitViewport);
+window.addEventListener('orientationchange', function(){ setTimeout(fitViewport, 250); });
+
 /* ── связь с Apps Script ───────────────────────────────────────── */
 function callApi(params){
   return fetch(API, { method: 'POST', body: JSON.stringify(params) })
@@ -575,6 +590,8 @@ function ask(){
   tap();
 
   el('send').disabled = true;
+  el('question').value = '';
+  if (el('question').blur) el('question').blur();
   el('thread').innerHTML =
     '<div class="bubble">' + esc(q) + '</div>' +
     '<div class="reply"><span class="ring" style="width:18px;height:18px;border-width:2px;' +
@@ -782,7 +799,7 @@ Array.prototype.forEach.call(document.querySelectorAll('nav button'), function(b
       el('s-' + n).classList.toggle('on', n === name);
     });
     updateHead(name);
-    window.scrollTo(0, 0);
+    el('scroll').scrollTop = 0;
   };
 });
 
