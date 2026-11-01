@@ -126,6 +126,20 @@ body.sheet-open #scroll{overflow:hidden}
 .chev{flex:0 0 auto;color:var(--muted);opacity:.5}
 .chev svg{width:17px;height:17px}
 
+/* ── избранное ── */
+.group > h2 svg{
+  width:13px;height:13px;stroke-width:2;fill:none;stroke:currentColor;
+  vertical-align:-2px;margin-right:5px;
+}
+.star{flex:0 0 auto;color:var(--amber);line-height:0}
+.star svg{width:16px;height:16px;fill:currentColor;stroke:currentColor;stroke-width:1.4}
+.tile .star{position:absolute;top:8px;left:8px}
+.line .star svg{width:14px;height:14px}
+.favbtn{display:flex;align-items:center;justify-content:center;gap:8px}
+.favbtn svg{width:17px;height:17px;stroke-width:1.8;fill:none;stroke:currentColor}
+.favbtn.on{color:var(--amber);border-color:var(--amber)}
+.favbtn.on svg{fill:currentColor}
+
 /* ── поиск ── */
 .search{position:relative;margin-bottom:16px}
 .search svg{
