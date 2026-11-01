@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Архив документов</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:     var(--tg-theme-bg-color, #17212b);
+    --card:   var(--tg-theme-secondary-bg-color, #232e3c);
+    --fg:     var(--tg-theme-text-color, #f5f5f5);
+    --muted:  var(--tg-theme-hint-color, #8d9aa8);
+    --accent: var(--tg-theme-button-color, #3a86ff);
+    --onacc:  var(--tg-theme-button-text-color, #fff);
+    --line:   rgba(127,127,127,.22);
+    --red:    #e5484d;
+    --amber:  #d8a200;
+    --green:  #30a46c;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  header{
+    position:sticky;top:0;z-index:5;background:var(--bg);
+    padding:10px 16px 0;border-bottom:1px solid var(--line);
+  }
+  .tabs{display:flex;gap:4px}
+  .tab{
+    flex:1;padding:9px 4px;text-align:center;font-size:14px;font-weight:600;
+    color:var(--muted);border:none;background:none;cursor:pointer;
+    border-bottom:2px solid transparent;font-family:inherit;
+  }
+  .tab.on{color:var(--fg);border-bottom-color:var(--accent)}
+  main{padding:14px 16px 28px}
+
+  .group{margin:0 0 20px}
+  .group h2{
+    margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .card{
+    background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;
+    cursor:pointer;border-left:3px solid transparent;
+  }
+  .card.red{border-left-color:var(--red)}
+  .card.amber{border-left-color:var(--amber)}
+  .card.green{border-left-color:var(--green)}
+  .card .t{font-weight:600;margin-bottom:3px}
+  .card .s{font-size:13px;color:var(--muted)}
+  .pill{
+    display:inline-block;padding:1px 7px;border-radius:999px;
+    font-size:11px;font-weight:700;margin-left:6px;vertical-align:1px;
+  }
+  .pill.red{background:rgba(229,72,77,.18);color:var(--red)}
+  .pill.amber{background:rgba(216,162,0,.18);color:var(--amber)}
+
+  input,textarea{
+    width:100%;background:var(--card);color:var(--fg);border:1px solid var(--line);
+    border-radius:10px;padding:11px 13px;font:inherit;outline:none;
+  }
+  input:focus,textarea:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:84px}
+  button.primary{
+    width:100%;margin-top:10px;padding:12px;border:none;border-radius:10px;
+    background:var(--accent);color:var(--onacc);font:inherit;font-weight:600;cursor:pointer;
+  }
+  button.primary:disabled{opacity:.5}
+
+  .empty{color:var(--muted);text-align:center;padding:36px 10px;font-size:14px;line-height:1.5}
+  .answer{
+    background:var(--card);border-radius:12px;padding:14px;margin-top:14px;
+    white-space:pre-wrap;font-size:14px;line-height:1.5;
+  }
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{
+    background:var(--card);border:1px solid var(--line);border-radius:999px;
+    padding:6px 11px;font-size:13px;color:var(--muted);cursor:pointer;
+  }
+
+  .sheet{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:none;align-items:flex-end}
+  .sheet.on{display:flex}
+  .sheet .inner{
+    background:var(--bg);width:100%;max-height:88vh;overflow:auto;
+    border-radius:16px 16px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .sheet h3{margin:0 0 14px;font-size:17px}
+  .row{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .row .k{color:var(--muted);flex:0 0 112px}
+  .row .v{flex:1;word-break:break-word}
+  .note{margin-top:12px;font-size:14px;color:var(--muted);line-height:1.5}
+  a.open{
+    display:block;text-align:center;margin-top:16px;padding:12px;border-radius:10px;
+    background:var(--accent);color:var(--onacc);text-decoration:none;font-weight:600;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="tabs">
+    <button class="tab on" data-tab="deadlines">Сроки</button>
+    <button class="tab"    data-tab="archive">Архив</button>
+    <button class="tab"    data-tab="ask">Вопрос</button>
+  </div>
+</header>
+
+<main>
+  <section id="deadlines"></section>
+
+  <section id="archive" hidden>
+    <input id="q" placeholder="Поиск по названию, организации, номеру…" autocomplete="off">
+    <div id="list" style="margin-top:14px"></div>
+  </section>
+
+  <section id="ask" hidden>
+    <textarea id="question" placeholder="Например: на сколько могут поднять аренду по договору?"></textarea>
+    <button class="primary" id="send">Спросить</button>
+    <div class="chips">
+      <span class="chip">за сколько предупреждать о выезде</span>
+      <span class="chip">какой залог за квартиру</span>
+      <span class="chip">что входит в страховку Generali</span>
+      <span class="chip">когда истекает Aufenthaltstitel</span>
+    </div>
+    <div id="answer"></div>
+  </section>
+</main>
+
+<div class="sheet" id="sheet"><div class="inner" id="sheetBody"></div></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   Адрес веб-приложения Apps Script. Если переразвернёшь скрипт
+   с новым адресом — поменяй здесь.
+   ═══════════════════════════════════════════════════════════════ */
+var API = 'https://script.google.com/macros/s/AKfycbxUus4MoPjOp_6R30VUspQyZNeRUPs2yGFN9PnvP8SQY2IfEjbU4QnOxGlcpQETy8XQ/exec';
+
+
+var tg    = window.Telegram ? window.Telegram.WebApp : null;
+var rows  = [];
+
+if (tg) { tg.ready(); tg.expand(); }
+
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function initData(){ return (tg && tg.initData) ? tg.initData : ''; }
+
+/* ── обращение к Apps Script ──────────────────────────────────
+   Сначала обычным запросом. Если браузер не пустит из-за
+   межсайтовых ограничений — через подгрузку скрипта.          */
+function callApi(params){
+  var qs = Object.keys(params)
+    .map(function(k){ return k + '=' + encodeURIComponent(params[k]); })
+    .join('&');
+
+  return fetch(API + '?' + qs, { method: 'GET' })
+    .then(function(r){ return r.json(); })
+    .catch(function(){ return jsonp(qs); });
+}
+
+var jsonpSeq = 0;
+function jsonp(qs){
+  return new Promise(function(resolve, reject){
+    var name = '__cb' + (++jsonpSeq) + '_' + Date.now();
+    var el   = document.createElement('script');
+    var done = false;
+
+    window[name] = function(data){
+      done = true;
+      resolve(data);
+      delete window[name];
+      el.remove();
+    };
+    el.onerror = function(){
+      if (!done) { reject(new Error('сервер недоступен')); el.remove(); }
+    };
+    el.src = API + '?' + qs + '&callback=' + name;
+    document.body.appendChild(el);
+
+    setTimeout(function(){
+      if (!done) { reject(new Error('сервер не ответил за 90 секунд')); }
+    }, 90000);
+  });
+}
+
+/* ── загрузка ─────────────────────────────────────────────── */
+function boot(){
+  var box = document.getElementById('deadlines');
+
+  if (!initData()) {
+    box.innerHTML = '<div class="empty">Открой приложение из Telegram — ' +
+                    'кнопкой «Архив» рядом со скрепкой.<br>' +
+                    'По прямой ссылке оно не работает намеренно.</div>';
+    return;
+  }
+
+  box.innerHTML = '<div class="empty">Загружаю архив…</div>';
+
+  callApi({ api: 'bootstrap', init: initData() })
+    .then(function(res){
+      if (!res || !res.ok) {
+        box.innerHTML = '<div class="empty">Не получилось: ' +
+          esc(res && res.error || 'нет ответа') + '</div>';
+        return;
+      }
+      rows = res.rows || [];
+      renderDeadlines();
+      renderList('');
+    })
+    .catch(function(e){
+      box.innerHTML = '<div class="empty">Ошибка связи: ' + esc(e.message || e) + '</div>';
+    });
+}
+
+/* ── экран «Сроки» ────────────────────────────────────────── */
+function bucket(r){
+  if (r.days === null || !r.until) return 'ok';
+  if (r.days < 0)   return 'over';
+  if (r.days <= 60) return 'soon';
+  return 'ok';
+}
+
+function renderDeadlines(){
+  var over = rows.filter(function(r){ return bucket(r) === 'over'; });
+  var soon = rows.filter(function(r){ return bucket(r) === 'soon'; });
+  var rest = rows.filter(function(r){ return bucket(r) === 'ok'; });
+
+  over.sort(function(a,b){ return a.days - b.days; });
+  soon.sort(function(a,b){ return a.days - b.days; });
+
+  var h = '';
+  if (over.length) h += group('Просрочено', over, 'red');
+  if (soon.length) h += group('Истекает в ближайшие 60 дней', soon, 'amber');
+  h += group('В порядке · ' + rest.length, rest, 'green');
+  if (!rows.length) h = '<div class="empty">В архиве пока пусто.</div>';
+
+  document.getElementById('deadlines').innerHTML = h;
+  bindCards();
+}
+
+function group(title, list, color){
+  var h = '<div class="group"><h2>' + esc(title) + '</h2>';
+  list.forEach(function(r){
+    var i = rows.indexOf(r);
+    var tail = '';
+    if (r.days !== null && r.days < 0) tail = '<span class="pill red">просрочен</span>';
+    else if (r.days !== null && r.days <= 60) tail = '<span class="pill amber">' + r.days + ' дн.</span>';
+
+    var sub = r.owner + ' · ' + r.cat;
+    if (r.until) sub += ' · до ' + r.until;
+
+    h += '<div class="card ' + color + '" data-i="' + i + '">' +
+           '<div class="t">' + esc(r.name) + tail + '</div>' +
+           '<div class="s">' + esc(sub) + '</div>' +
+         '</div>';
+  });
+  return h + '</div>';
+}
+
+/* ── экран «Архив» ────────────────────────────────────────── */
+function renderList(query){
+  var q = String(query || '').trim().toLowerCase();
+  var hit = rows.filter(function(r){
+    if (!q) return true;
+    return (r.name + ' ' + r.org + ' ' + r.number + ' ' + r.cat + ' ' +
+            r.owner + ' ' + r.note).toLowerCase().indexOf(q) !== -1;
+  });
+
+  if (!hit.length) {
+    document.getElementById('list').innerHTML = '<div class="empty">Ничего не нашлось.</div>';
+    return;
+  }
+
+  var byOwner = {};
+  hit.forEach(function(r){ (byOwner[r.owner] = byOwner[r.owner] || []).push(r); });
+
+  var h = '';
+  Object.keys(byOwner).sort().forEach(function(owner){
+    h += '<div class="group"><h2>' + esc(owner) + '</h2>';
+    byOwner[owner].forEach(function(r){
+      var i = rows.indexOf(r);
+      h += '<div class="card" data-i="' + i + '">' +
+             '<div class="t">' + esc(r.name) + '</div>' +
+             '<div class="s">' + esc(r.cat + (r.org ? ' · ' + r.org : '')) + '</div>' +
+           '</div>';
+    });
+    h += '</div>';
+  });
+
+  document.getElementById('list').innerHTML = h;
+  bindCards();
+}
+
+/* ── карточка документа ───────────────────────────────────── */
+function bindCards(){
+  Array.prototype.forEach.call(document.querySelectorAll('.card'), function(el){
+    el.onclick = function(){ openSheet(rows[Number(el.getAttribute('data-i'))]); };
+  });
+}
+
+function line(k, v){
+  if (!v) return '';
+  return '<div class="row"><div class="k">' + esc(k) + '</div>' +
+         '<div class="v">' + esc(v) + '</div></div>';
+}
+
+function openSheet(r){
+  if (!r) return;
+  var h = '<h3>' + esc(r.name) + '</h3>' +
+    line('Кому', r.owner) +
+    line('Папка', r.cat) +
+    line('Организация', r.org) +
+    line('Номер', r.number) +
+    line('Выдан', r.issued) +
+    line('Действует до', r.until || 'бессрочно') +
+    line('Статус', r.status);
+  if (r.note) h += '<div class="note">' + esc(r.note) + '</div>';
+  if (r.link) h += '<a class="open" href="' + esc(r.link) + '" target="_blank">Открыть файл</a>';
+
+  document.getElementById('sheetBody').innerHTML = h;
+  document.getElementById('sheet').classList.add('on');
+  if (tg && tg.BackButton) tg.BackButton.show();
+}
+
+function closeSheet(){
+  document.getElementById('sheet').classList.remove('on');
+  if (tg && tg.BackButton) tg.BackButton.hide();
+}
+
+document.getElementById('sheet').onclick = function(ev){
+  if (ev.target.id === 'sheet') closeSheet();
+};
+if (tg && tg.BackButton) tg.BackButton.onClick(closeSheet);
+
+/* ── экран «Вопрос» ───────────────────────────────────────── */
+function askNow(){
+  var q   = document.getElementById('question').value.trim();
+  var box = document.getElementById('answer');
+  if (!q) return;
+
+  document.getElementById('send').disabled = true;
+  box.innerHTML = '<div class="answer">Ищу по архиву… до полуминуты, ' +
+                  'если придётся открывать документы.</div>';
+
+  callApi({ api: 'ask', init: initData(), q: q })
+    .then(function(res){
+      document.getElementById('send').disabled = false;
+      box.innerHTML = '<div class="answer">' +
+        esc(res && res.ok ? res.answer : 'Не получилось: ' + (res && res.error || 'нет ответа')) +
+        '</div>';
+    })
+    .catch(function(e){
+      document.getElementById('send').disabled = false;
+      box.innerHTML = '<div class="answer">Ошибка связи: ' + esc(e.message || e) + '</div>';
+    });
+}
+
+document.getElementById('send').onclick = askNow;
+document.getElementById('q').oninput = function(){ renderList(this.value); };
+
+Array.prototype.forEach.call(document.querySelectorAll('.chip'), function(c){
+  c.onclick = function(){
+    document.getElementById('question').value = c.textContent;
+    askNow();
+  };
+});
+
+/* ── вкладки ──────────────────────────────────────────────── */
+Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t){
+  t.onclick = function(){
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){
+      x.classList.toggle('on', x === t);
+    });
+    ['deadlines','archive','ask'].forEach(function(id){
+      document.getElementById(id).hidden = (id !== t.getAttribute('data-tab'));
+    });
+  };
+});
+
+boot();
+</script>
+</body>
+</html>
