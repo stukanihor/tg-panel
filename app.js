@@ -15,6 +15,7 @@ var draft  = null;     // загруженный документ, ждущий 
 var filter = '';       // выбранная плитка на экране «Сроки»
 var shown  = null;     // документ, открытый в карточке
 var previews = {};     // кэш превью по ссылке на файл
+var shareOpen = false; // у открытого документа включён доступ по ссылке
 
 var TITLES = {
   deadlines: ['Сроки',    'Что просрочено и что скоро истекает'],
@@ -341,8 +342,10 @@ function openSheet(r){
     (r.note ? '<div class="memo">' + esc(r.note) + '</div>' : '') +
     (r.link ? '<a class="act" href="' + esc(r.link) + '" target="_blank">' +
               '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть файл</a>' : '') +
+    (r.link ? '<button class="btn ghost" id="s_share">Поделиться</button>' : '') +
     '<button class="btn danger" id="s_del">Удалить из архива</button>';
 
+  if (r.link) el('s_share').onclick = function(){ tap(); drawShare(r); };
   el('s_del').onclick = function(){ askDelete(r); };
   if (r.link) loadPreview(r);
 
@@ -355,6 +358,7 @@ function openSheet(r){
 function loadPreview(r){
   var box = el('prev');
   if (!box) return;
+  shareOpen = false;
 
   if (previews[r.link]) return paintPreview(box, previews[r.link], r);
 
@@ -363,6 +367,7 @@ function loadPreview(r){
       if (shown !== r) return;
       var fresh = el('prev');
       if (!fresh) return;
+      shareOpen = !!(res && res.open);
       if (!res || !res.ok) {
         fresh.innerHTML = '<div class="prevno">' +
           esc(res && res.error || 'превью недоступно') + '</div>';
@@ -381,6 +386,131 @@ function loadPreview(r){
 function paintPreview(box, src, r){
   box.innerHTML = '<a href="' + esc(r.link) + '" target="_blank">' +
                   '<img src="' + src + '" alt=""></a>';
+}
+
+/* ── поделиться ───────────────────────────────────────────────── */
+function drawShare(r){
+  el('sheet').innerHTML =
+    '<div class="grab"></div>' +
+    '<h3>Поделиться</h3>' +
+    '<div class="sub">' + esc(r.name) + '</div>' +
+    '<div id="shmsg"></div>' +
+
+    '<button class="btn primary" id="sh_tg">Прислать файл в чат</button>' +
+    '<div class="hint">Бот пришлёт документ тебе в Telegram — оттуда перешлёшь ' +
+      'кому угодно обычной пересылкой. Доступ к файлу на Drive не меняется.</div>' +
+
+    '<div class="field sep"><label>Отправить на почту</label>' +
+      '<input id="sh_mail" type="email" inputmode="email" autocomplete="email" ' +
+      'placeholder="name@example.com"></div>' +
+    '<button class="btn ghost" id="sh_mailgo">Отправить письмом</button>' +
+    '<div class="hint">Документ уйдёт вложением, до 24 МБ.</div>' +
+
+    '<div class="swrow"><div class="swtext"><b>Доступ по ссылке</b>' +
+      '<span>Пока включён, файл откроет любой, у кого есть ссылка</span></div>' +
+      '<label class="sw"><input type="checkbox" id="sh_link"' +
+      (shareOpen ? ' checked' : '') + '><i></i></label></div>' +
+    '<div id="shlink">' + (shareOpen ? linkBox(r) : '') + '</div>' +
+
+    '<button class="btn ghost" id="sh_back">Назад</button>';
+
+  el('sh_back').onclick   = function(){ tap(); openSheet(r); };
+  el('sh_tg').onclick     = function(){ sendShare(r, { how: 'tg' }); };
+  el('sh_mailgo').onclick = function(){
+    var to = el('sh_mail').value.trim();
+    if (!to) { say('Впиши адрес почты.'); return; }
+    sendShare(r, { how: 'mail', to: to });
+  };
+  el('sh_link').onchange = function(){ toggleLink(r, this); };
+  bindLinkBox(r);
+}
+
+function linkBox(r){
+  return '<div class="linkbox"><div class="url" id="sh_url">' + esc(r.link) + '</div>' +
+         '<div class="two"><button class="btn ghost" id="sh_tglink">В Telegram</button>' +
+         '<button class="btn ghost" id="sh_copy">Скопировать</button></div></div>';
+}
+
+function bindLinkBox(r){
+  var a = el('sh_tglink'), b = el('sh_copy');
+  if (a) a.onclick = function(){
+    tap();
+    var u = 'https://t.me/share/url?url=' + encodeURIComponent(r.link) +
+            '&text=' + encodeURIComponent(r.name);
+    if (tg && tg.openTelegramLink) tg.openTelegramLink(u);
+    else window.open(u, '_blank');
+  };
+  if (b) b.onclick = function(){
+    tap();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(r.link)
+        .then(function(){ b.textContent = 'Скопировано'; })
+        .catch(function(){ say(r.link); });
+    } else {
+      say(r.link);
+    }
+  };
+}
+
+function toggleLink(r, box){
+  var want = box.checked;
+  box.disabled = true;
+  tap('medium');
+
+  callApi({ api: 'link', init: initData(), link: r.link, on: want ? 1 : 0 })
+    .then(function(res){
+      box.disabled = false;
+      if (!res || !res.ok) {
+        box.checked = !want;
+        say('Не вышло: ' + (res && res.error || 'нет ответа'));
+        return;
+      }
+      shareOpen = want;
+      el('shlink').innerHTML = want ? linkBox(r) : '';
+      bindLinkBox(r);
+    })
+    .catch(function(e){
+      box.disabled = false; box.checked = !want;
+      say(e.message || String(e));
+    });
+}
+
+function sendShare(r, how){
+  var msg = el('shmsg');
+  msg.innerHTML = '<div class="notice">Отправляю…</div>';
+  el('sh_tg').disabled = true;
+  el('sh_mailgo').disabled = true;
+  tap();
+
+  callApi({ api: 'share', init: initData(), link: r.link, name: r.name,
+            how: how.how, to: how.to || '' })
+    .then(function(res){
+      el('sh_tg').disabled = false;
+      el('sh_mailgo').disabled = false;
+
+      if (!res || !res.ok) {
+        msg.innerHTML = '<div class="notice bad">' +
+          esc(res && res.error || 'нет ответа') + '</div>';
+        return;
+      }
+      tap('medium');
+
+      if (res.how === 'mail') {
+        msg.innerHTML = '<div class="notice good">Письмо ушло на ' + esc(res.to) + '</div>';
+        el('sh_mail').value = '';
+      } else {
+        msg.innerHTML = '<div class="notice good">Файл в чате с ботом — ' +
+          'перешли его кому нужно.</div>' +
+          '<button class="btn primary" id="sh_go">Перейти в чат</button>';
+        var go = el('sh_go');
+        if (go) go.onclick = function(){ if (tg && tg.close) tg.close(); };
+      }
+    })
+    .catch(function(e){
+      el('sh_tg').disabled = false;
+      el('sh_mailgo').disabled = false;
+      msg.innerHTML = '<div class="notice bad">' + esc(e.message || e) + '</div>';
+    });
 }
 
 /* ── удаление: файл в «99_Архив», строка в «Корзину» ───────────── */
