@@ -453,7 +453,8 @@ nav .dot{
 
 /* ── перетаскивание ── */
 .lift{opacity:.4;transform:scale(.97)}
-.ghost{
+/* Имя класса нарочно не .ghost: так называются второстепенные кнопки. */
+.dghost{
   position:fixed;z-index:60;pointer-events:none;
   transform:translate(-50%,-140%);
   max-width:62vw;padding:9px 14px;border-radius:999px;
