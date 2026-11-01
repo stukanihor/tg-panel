@@ -296,7 +296,9 @@ function drawList(query){
   }
 
   el('views').hidden = !docs;
-  el('list').innerHTML = h + ((q || navOwner) ? '' : trashHtml());
+  el('list').innerHTML = h +
+    ((q || navOwner) ? '' :
+      '<button class="btn ghost" id="zipAll">Скачать архив</button>' + trashHtml());
 
   bindCards();
   bindTrash();
@@ -546,6 +548,9 @@ function bindFolders(){
 
   var add = el('newFolder');
   if (add) add.onclick = function(){ tap(); newFolderSheet(navOwner); };
+
+  var zip = el('zipAll');
+  if (zip) zip.onclick = function(){ tap(); zipSheet('', ''); };
 }
 
 /* ── корзина: свёрнутый список внизу «Архива» ── */
@@ -673,6 +678,84 @@ function openSheet(r){
   document.body.classList.add('sheet-open');
   el('sheet').scrollTop = 0;
   syncBack();
+}
+
+/* ── выгрузка архива одним файлом ── */
+function zipSheet(ownerKey, catKey){
+  var cats = ownerKey ? catOpts(ownerKey) : [];
+
+  showSheet(
+    '<div class="grab"></div>' +
+    '<h3>Скачать архив</h3>' +
+    '<div class="sub">Соберу выбранное в один ZIP</div>' +
+    '<div id="zpmsg"></div>' +
+    picker('zp_owner', 'Чьи документы', ownerOpts(), ownerKey, '— весь архив —') +
+    (ownerKey
+      ? picker('zp_cat', 'Папка', cats, catKey, '— все папки —')
+      : '') +
+    '<div class="hint">Внутри архив разложен так же: владелец → папка → файл. ' +
+      'Готовый ZIP придёт файлом в чат с ботом и останется на Drive ' +
+      'в папке «98_Выгрузки».</div>' +
+    '<button class="btn primary" id="zp_go">Собрать</button>' +
+    '<button class="btn ghost" id="zp_no">Отмена</button>');
+
+  el('zp_owner').onchange = function(){ zipSheet(this.value, ''); };
+  el('zp_no').onclick     = function(){ tap(); closeSheet(); };
+
+  el('zp_go').onclick = function(){
+    var o = el('zp_owner').value;
+    var c = el('zp_cat') ? el('zp_cat').value : '';
+
+    tap();
+    el('zp_go').disabled = true;
+    el('zpmsg').innerHTML =
+      '<div class="notice">Собираю. Это может занять до минуты — ' +
+      'каждый файл качается с Drive.</div>';
+
+    callApi({ api: 'zip', init: initData(), owner: o, cat: c })
+      .then(function(res){
+        el('zp_go').disabled = false;
+        if (!res || !res.ok) {
+          el('zpmsg').innerHTML = '<div class="notice bad">' +
+            esc(res && res.error || 'нет ответа') + '</div>';
+          return;
+        }
+        tap('medium');
+        drawZipDone(res);
+      })
+      .catch(function(e){
+        el('zp_go').disabled = false;
+        el('zpmsg').innerHTML = '<div class="notice bad">' + esc(e.message || e) + '</div>';
+      });
+  };
+}
+
+function drawZipDone(res){
+  var warn = '';
+  if (res.lost)  warn += '<br>Не открылось файлов: ' + res.lost + '.';
+  if (res.heavy) warn += '<br>Не поместилось по объёму: ' + res.heavy + '.';
+
+  el('sheet').innerHTML =
+    '<div class="grab"></div>' +
+    '<h3>Готово</h3>' +
+    '<div class="sub">' + esc(res.what) + '</div>' +
+    '<div class="notice good"><b>' + esc(res.name) + '</b><br>' +
+      'Файлов: ' + res.files + ' · ' + res.mb + ' МБ' + warn + '</div>' +
+    (res.sent
+      ? '<div class="hint" style="margin-bottom:14px">Архив уже лежит файлом ' +
+        'в чате с ботом — оттуда сохраняй или пересылай.</div>'
+      : '<div class="notice">В Telegram не отправил: слишком большой. ' +
+        'Качай по ссылке ниже.</div>') +
+    '<a class="act" href="' + esc(res.url) + '" target="_blank">' +
+      '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть на Drive</a>' +
+    (res.sent
+      ? '<button class="btn primary" id="zp_chat">Перейти в чат</button>'
+      : '') +
+    '<button class="btn ghost" id="zp_close">Закрыть</button>';
+
+  var go = el('zp_chat');
+  if (go) go.onclick = function(){ if (tg && tg.close) tg.close(); };
+  el('zp_close').onclick = function(){ tap(); closeSheet(); };
 }
 
 /* ── правка карточки ── */
@@ -961,10 +1044,12 @@ function folderSheet(ownerKey, catKey, moveTo){
       '<input id="fd_name" value="' + esc(c.label) + '" autocomplete="off"></div>' +
     '<button class="btn primary" id="fd_ren">Переименовать</button>' +
     '<div class="hint">Папка переименуется и на Drive, и во всех записях реестра.</div>' +
+    '<button class="btn ghost" id="fd_zip">Скачать папку</button>' +
     '<div id="fdkill"></div>' +
     '<button class="btn ghost" id="fd_back">Назад</button>');
 
   el('fd_back').onclick = function(){ tap(); closeSheet(); };
+  el('fd_zip').onclick  = function(){ tap(); zipSheet(ownerKey, catKey); };
 
   el('fd_ren').onclick = function(){
     var name = el('fd_name').value.trim();
@@ -1383,9 +1468,10 @@ function field(id, label, value, type){
     '<input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(value || '') + '"></div>';
 }
 
-function picker(id, label, opts, chosen){
+function picker(id, label, opts, chosen, emptyLabel){
   var h = '<div class="field"><label>' + esc(label) + '</label><div class="selwrap">' +
-          '<select id="' + id + '"><option value="">— не выбрано —</option>';
+          '<select id="' + id + '"><option value="">' +
+          esc(emptyLabel || '— не выбрано —') + '</option>';
   opts.forEach(function(o){
     h += '<option value="' + esc(o.v) + '"' + (o.v === chosen ? ' selected' : '') + '>' +
          esc(o.t) + '</option>';
