@@ -317,3 +317,37 @@ nav .dot{
 .binnote{
   color:var(--muted);font-size:12.5px;line-height:1.5;padding:6px 2px 0;
 }
+
+/* ── «Поделиться» ────────────────────────────────────────────── */
+.hint{
+  color:var(--muted);font-size:12.5px;line-height:1.5;margin:8px 2px 0;
+}
+.field.sep{margin-top:22px}
+.swrow{
+  display:flex;align-items:center;gap:14px;margin-top:22px;
+  padding:14px 15px;border-radius:var(--r-md);background:var(--surface);
+}
+.swtext{flex:1;min-width:0}
+.swtext b{display:block;font-size:14.5px;font-weight:600}
+.swtext span{display:block;color:var(--muted);font-size:12.5px;line-height:1.45;margin-top:3px}
+.sw{flex:0 0 auto;position:relative;display:block;width:46px;height:28px;cursor:pointer}
+.sw input{position:absolute;opacity:0;width:0;height:0}
+.sw i{
+  position:absolute;inset:0;border-radius:999px;background:var(--line);
+  transition:background .2s var(--ease);
+}
+.sw i::after{
+  content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;
+  border-radius:50%;background:#fff;transition:transform .2s var(--ease);
+}
+.sw input:checked + i{background:var(--accent)}
+.sw input:checked + i::after{transform:translateX(18px)}
+.sw input:disabled + i{opacity:.5}
+.linkbox{margin-top:12px}
+.linkbox .url{
+  padding:11px 13px;border-radius:var(--r-md);background:var(--surface);
+  color:var(--muted);font-size:12.5px;word-break:break-all;line-height:1.45;
+  user-select:all;
+}
+.linkbox .two{gap:10px}
+.linkbox .two .btn{margin-top:10px}
