@@ -1,17 +1,20 @@
-/* ════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════
    Архив документов — логика мини-приложения.
 
    Адрес веб-приложения Apps Script. Если создашь НОВОЕ развёртывание
    вместо новой версии — адрес сменится, поменяй его здесь.
-   ════════════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════════ */
 var API = 'https://script.google.com/macros/s/AKfycbxUus4MoPjOp_6R30VUspQyZNeRUPs2yGFN9PnvP8SQY2IfEjbU4QnOxGlcpQETy8XQ/exec';
 
 var tg     = window.Telegram ? window.Telegram.WebApp : null;
 var rows   = [];
+var trash  = [];     // удалённое: лежит в «99_Архив», можно вернуть
 var OWNERS = [];
 var CATS   = {};
 var draft  = null;     // загруженный документ, ждущий подтверждения
 var filter = '';       // выбранная плитка на экране «Сроки»
+var shown  = null;     // документ, открытый в карточке
+var previews = {};     // кэш превью по ссылке на файл
 
 var TITLES = {
   deadlines: ['Сроки',    'Что просрочено и что скоро истекает'],
@@ -27,7 +30,7 @@ var HINTS = [
   'когда истекает Aufenthaltstitel'
 ];
 
-/* Иконка по названию папки. */
+/* Иконка по ключу папки — по последней цифре категории. */
 function catIcon(cat){
   var c = String(cat || '');
   if (/Личные/i.test(c))        return 'i-id';
@@ -65,7 +68,7 @@ if (tg) {
   try { tg.setHeaderColor('secondary_bg_color'); } catch (e) {}
 }
 
-/* ── связь с Apps Script ────────────────────────────────────── */
+/* ── связь с Apps Script ───────────────────────────────────────── */
 function callApi(params){
   return fetch(API, { method: 'POST', body: JSON.stringify(params) })
     .then(function(r){ return r.json(); })
@@ -94,7 +97,7 @@ function jsonp(qs){
   });
 }
 
-/* ── загрузка данных ────────────────────────────────────── */
+/* ── загрузка данных ───────────────────────────────────────────── */
 function boot(){
   if (!initData()) {
     el('subtitle').textContent = '';
@@ -115,6 +118,7 @@ function boot(){
         return;
       }
       rows   = res.rows   || [];
+      trash  = res.trash  || [];
       OWNERS = res.owners || [];
       CATS   = res.cats   || {};
       drawDeadlines();
@@ -138,7 +142,7 @@ function counts(){
   return c;
 }
 
-/* ── экран «Сроки» ───────────────────────────────────────── */
+/* ── экран «Сроки» ─────────────────────────────────────────────── */
 function drawDeadlines(){
   var c = counts();
 
@@ -184,7 +188,9 @@ function statTile(key, n, label, color){
 
 function section(title, list, color){
   var h = '<div class="group"><h2>' + esc(title) + '</h2>';
-  list.forEach(function(r, n){ h += cardHtml(r, color, n); });
+  list.forEach(function(r, n){
+    h += cardHtml(r, color, n);
+  });
   return h + '</div>';
 }
 
@@ -192,7 +198,7 @@ function cardHtml(r, color, n){
   var i = rows.indexOf(r);
   var badge = '';
   if (r.days !== null && r.until) {
-    if (r.days < 0)        badge = '<span class="badge red">' + Math.abs(r.days) + ' дн. назад</span>';
+    if (r.days < 0)       badge = '<span class="badge red">' + Math.abs(r.days) + ' дн. назад</span>';
     else if (r.days <= 60) badge = '<span class="badge amber">' + r.days + ' дн.</span>';
   }
   var sub = r.owner + ' · ' + r.cat.replace(/^[\d.]+\s*/, '');
@@ -207,7 +213,7 @@ function cardHtml(r, color, n){
          '</div>';
 }
 
-/* ── экран «Архив» ───────────────────────────────────────── */
+/* ── экран «Архив» ─────────────────────────────────────────────── */
 function drawList(query){
   var q = String(query || '').trim().toLowerCase();
   var hit = rows.filter(function(r){
@@ -216,26 +222,92 @@ function drawList(query){
             r.owner + ' ' + r.note).toLowerCase().indexOf(q) !== -1;
   });
 
+  var h = '';
   if (!hit.length) {
-    el('list').innerHTML = '<div class="state">Ничего не нашлось.</div>';
-    return;
+    h = '<div class="state">Ничего не нашлось.</div>';
+  } else {
+    var by = {};
+    hit.forEach(function(r){ (by[r.owner] = by[r.owner] || []).push(r); });
+
+    var n = 0;
+    Object.keys(by).sort().forEach(function(owner){
+      h += '<div class="group"><h2>' + esc(owner) + ' · ' + by[owner].length + '</h2>';
+      by[owner].forEach(function(r){ h += cardHtml(r, '', n++); });
+      h += '</div>';
+    });
   }
 
-  var by = {};
-  hit.forEach(function(r){ (by[r.owner] = by[r.owner] || []).push(r); });
-
-  var h = '', n = 0;
-  Object.keys(by).sort().forEach(function(owner){
-    h += '<div class="group"><h2>' + esc(owner) + ' · ' + by[owner].length + '</h2>';
-    by[owner].forEach(function(r){ h += cardHtml(r, '', n++); });
-    h += '</div>';
-  });
-
-  el('list').innerHTML = h;
+  el('list').innerHTML = h + trashHtml();
   bindCards();
+  bindTrash();
 }
 
-/* ── карточка документа ──────────────────────────────────── */
+/* ── корзина: свёрнутый список внизу «Архива» ──────────────────── */
+function trashHtml(){
+  if (!trash.length) return '';
+
+  var h = '<div class="group bin"><h2 id="binhead">' +
+          '<svg viewBox="0 0 24 24"><use href="#i-bin"/></svg>' +
+          'Корзина · ' + trash.length +
+          '<svg class="caret" viewBox="0 0 24 24"><use href="#i-down"/></svg></h2>' +
+          '<div id="binlist" hidden>';
+
+  trash.forEach(function(t, i){
+    h += '<div class="card dim">' + icon(catIcon(t.cat)) +
+         '<div class="body"><div class="t">' + esc(t.name) + '</div>' +
+         '<div class="s">' + esc(t.owner + (t.gone ? ' · удалён ' + t.gone : '')) + '</div></div>' +
+         '<button class="undo" data-t="' + i + '">Вернуть</button></div>';
+  });
+
+  return h + '<div class="binnote">Файлы лежат в папке «99_Архив» на Drive — ' +
+         'ничего не стёрто насовсем.</div></div></div>';
+}
+
+function bindTrash(){
+  var head = el('binhead');
+  if (!head) return;
+
+  head.onclick = function(){
+    tap();
+    var box = el('binlist');
+    box.hidden = !box.hidden;
+    head.classList.toggle('open', !box.hidden);
+  };
+
+  Array.prototype.forEach.call(document.querySelectorAll('.undo'), function(b){
+    b.onclick = function(ev){
+      ev.stopPropagation();
+      var t = trash[Number(b.getAttribute('data-t'))];
+      if (!t) return;
+
+      tap('medium');
+      b.disabled = true;
+      b.textContent = '…';
+
+      callApi({ api: 'restore', init: initData(), link: t.link, name: t.name })
+        .then(function(res){
+          if (!res || !res.ok) {
+            b.disabled = false; b.textContent = 'Вернуть';
+            say('Не вышло: ' + (res && res.error || 'нет ответа'));
+            return;
+          }
+          tap('medium');
+          boot();
+        })
+        .catch(function(e){
+          b.disabled = false; b.textContent = 'Вернуть';
+          say(e.message || String(e));
+        });
+    };
+  });
+}
+
+function say(msg){
+  if (tg && tg.showAlert) { try { tg.showAlert(msg); return; } catch (e) {} }
+  alert(msg);
+}
+
+/* ── карточка документа ────────────────────────────────────────── */
 function bindCards(){
   Array.prototype.forEach.call(document.querySelectorAll('.card'), function(c){
     c.onclick = function(){ tap(); openSheet(rows[Number(c.getAttribute('data-i'))]); };
@@ -249,6 +321,7 @@ function kv(k, v){
 
 function openSheet(r){
   if (!r) return;
+  shown = r;
 
   var state = bucket(r);
   var sub = state === 'over' ? 'Просрочен ' + Math.abs(r.days) + ' дн. назад'
@@ -259,6 +332,7 @@ function openSheet(r){
     '<div class="grab"></div>' +
     '<h3>' + esc(r.name) + '</h3>' +
     '<div class="sub">' + esc(sub) + '</div>' +
+    (r.link ? '<div class="prev" id="prev"><div class="skel tall"></div></div>' : '') +
     kv('Кому', r.owner) +
     kv('Папка', r.cat) +
     kv('Организация', r.org) +
@@ -266,14 +340,88 @@ function openSheet(r){
     kv('Выдан', r.issued) +
     (r.note ? '<div class="memo">' + esc(r.note) + '</div>' : '') +
     (r.link ? '<a class="act" href="' + esc(r.link) + '" target="_blank">' +
-              '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть файл</a>' : '');
+              '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть файл</a>' : '') +
+    '<button class="btn danger" id="s_del">Удалить из архива</button>';
+
+  el('s_del').onclick = function(){ askDelete(r); };
+  if (r.link) loadPreview(r);
 
   el('scrim').classList.add('on');
   document.body.classList.add('sheet-open');
   if (tg && tg.BackButton) { tg.BackButton.show(); }
 }
 
+/* ── превью первой страницы ────────────────────────────────────── */
+function loadPreview(r){
+  var box = el('prev');
+  if (!box) return;
+
+  if (previews[r.link]) return paintPreview(box, previews[r.link], r);
+
+  callApi({ api: 'preview', init: initData(), link: r.link })
+    .then(function(res){
+      if (shown !== r) return;
+      var fresh = el('prev');
+      if (!fresh) return;
+      if (!res || !res.ok) {
+        fresh.innerHTML = '<div class="prevno">' +
+          esc(res && res.error || 'превью недоступно') + '</div>';
+        return;
+      }
+      var src = 'data:' + res.mime + ';base64,' + res.b64;
+      previews[r.link] = src;
+      paintPreview(fresh, src, r);
+    })
+    .catch(function(){
+      var fresh = el('prev');
+      if (fresh) fresh.innerHTML = '<div class="prevno">превью не загрузилось</div>';
+    });
+}
+
+function paintPreview(box, src, r){
+  box.innerHTML = '<a href="' + esc(r.link) + '" target="_blank">' +
+                  '<img src="' + src + '" alt=""></a>';
+}
+
+/* ── удаление: файл в «99_Архив», строка в «Корзину» ───────────── */
+function askDelete(r){
+  tap('medium');
+  var msg = 'Убрать «' + r.name + '» из архива?\n\n' +
+            'Файл переедет в папку 99_Архив, а запись — в корзину. ' +
+            'Вернуть можно в любой момент.';
+
+  if (tg && tg.showConfirm) {
+    try { tg.showConfirm(msg, function(yes){ if (yes) doDelete(r); }); return; }
+    catch (e) {}
+  }
+  if (confirm(msg)) doDelete(r);
+}
+
+function doDelete(r){
+  el('sheet').innerHTML =
+    '<div class="grab"></div><div class="state"><div class="ring"></div>Убираю в архив…</div>';
+
+  callApi({ api: 'trash', init: initData(), link: r.link, name: r.name })
+    .then(function(res){
+      if (!res || !res.ok) {
+        el('sheet').innerHTML = '<div class="grab"></div><div class="notice bad">' +
+          esc(res && res.error || 'нет ответа') + '</div>' +
+          '<button class="btn ghost" onclick="closeSheet()">Закрыть</button>';
+        return;
+      }
+      closeSheet();
+      tap('medium');
+      boot();
+    })
+    .catch(function(e){
+      el('sheet').innerHTML = '<div class="grab"></div><div class="notice bad">' +
+        esc(e.message || e) + '</div>' +
+        '<button class="btn ghost" onclick="closeSheet()">Закрыть</button>';
+    });
+}
+
 function closeSheet(){
+  shown = null;
   el('scrim').classList.remove('on');
   document.body.classList.remove('sheet-open');
   if (tg && tg.BackButton) tg.BackButton.hide();
@@ -282,7 +430,7 @@ function closeSheet(){
 el('scrim').onclick = function(ev){ if (ev.target.id === 'scrim') closeSheet(); };
 if (tg && tg.BackButton) tg.BackButton.onClick(closeSheet);
 
-/* ── экран «Вопрос» ──────────────────────────────────────── */
+/* ── экран «Вопрос» ────────────────────────────────────────────── */
 el('chips').innerHTML = HINTS.map(function(t){
   return '<span class="chip">' + esc(t) + '</span>';
 }).join('');
@@ -322,7 +470,7 @@ function ask(){
 el('send').onclick = ask;
 el('q').oninput = function(){ drawList(this.value); };
 
-/* ── экран «Добавить» ──────────────────────────────────── */
+/* ── экран «Добавить» ──────────────────────────────────────────── */
 function resetAdd(){
   draft = null;
   el('addStart').hidden = false;
@@ -476,7 +624,7 @@ function cancelDraft(){
   if (id) callApi({ api: 'discard', init: initData(), fileId: id });
 }
 
-/* ── навигация ───────────────────────────────────────────── */
+/* ── навигация ─────────────────────────────────────────────────── */
 function updateHead(name){
   var t = TITLES[name];
   el('title').textContent = t[0];
