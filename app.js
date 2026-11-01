@@ -1,9 +1,9 @@
-/* ═══════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    Архив документов — логика мини-приложения.
 
    Адрес веб-приложения Apps Script. Если создашь НОВОЕ развёртывание
    вместо новой версии — адрес сменится, поменяй его здесь.
-   ═══════════════════════════════════════════════════════════════════ */
+   ════════════════════════════════════════════════════════════════ */
 var API = 'https://script.google.com/macros/s/AKfycbxUus4MoPjOp_6R30VUspQyZNeRUPs2yGFN9PnvP8SQY2IfEjbU4QnOxGlcpQETy8XQ/exec';
 
 var tg     = window.Telegram ? window.Telegram.WebApp : null;
@@ -366,7 +366,10 @@ function foldersHtml(ok){
          '<svg viewBox="0 0 24 24"><use href="#i-dots"/></svg></button></div>';
   });
 
-  return h + '</div><button class="btn ghost" id="newFolder">Новая папка</button>';
+  return h + '</div>' +
+    '<div class="tip">Папку можно перетащить выше или ниже — номера ' +
+    'пересчитаются сами.</div>' +
+    '<button class="btn ghost" id="newFolder">Новая папка</button>';
 }
 
 /* ── уровень 3: документы, три вида ── */
@@ -465,7 +468,7 @@ Array.prototype.forEach.call(document.querySelectorAll('#views button'), functio
 });
 syncViews();
 
-/* ── переходы по папкам и меню ── */
+/* ── переходы по папкам и меню папки ── */
 function bindFolders(){
   Array.prototype.forEach.call(document.querySelectorAll('.card[data-o]'), function(c){
     c.onclick = function(){
@@ -1364,8 +1367,15 @@ var swallowClick = false;
 function dragItem(t){
   var n = t;
   while (n && n !== document.body) {
-    if (n.getAttribute && n.getAttribute('data-i') !== null &&
-        /(^|\s)(card|tile|line)(\s|$)/.test(n.className || '')) return n;
+    if (n.classList) {
+      if (n.classList.contains('dots')) return null;   // это меню, не перенос
+      if (n.getAttribute('data-i') !== null &&
+          (n.classList.contains('card') || n.classList.contains('tile') ||
+           n.classList.contains('line')))
+        return { kind: 'doc', node: n };
+      if (n.getAttribute('data-c') !== null && n.classList.contains('card'))
+        return { kind: 'folder', node: n };
+    }
     n = n.parentNode;
   }
   return null;
@@ -1374,13 +1384,20 @@ function dragItem(t){
 function onDown(e){
   if (drag || (e.button != null && e.button !== 0)) return;
 
-  var node = dragItem(e.target);
-  if (!node) return;
-  var r = rows[Number(node.getAttribute('data-i'))];
-  if (!r) return;
+  var found = dragItem(e.target);
+  if (!found) return;
 
-  drag = { r: r, node: node, x: e.clientX, y: e.clientY,
-           mouse: e.pointerType === 'mouse', active: false, timer: null, slot: null };
+  var r = null;
+  if (found.kind === 'doc') {
+    r = rows[Number(found.node.getAttribute('data-i'))];
+    if (!r) return;
+  } else if (!navOwner || (CATS[navOwner] || []).length < 2) {
+    return;                                            // переставлять нечего
+  }
+
+  drag = { kind: found.kind, r: r, node: found.node, x: e.clientX, y: e.clientY,
+           lastY: e.clientY, mouse: e.pointerType === 'mouse',
+           active: false, timer: null, slot: null, was: '' };
 
   if (!drag.mouse) drag.timer = setTimeout(startDrag, 380);
 }
@@ -1397,8 +1414,12 @@ function onMove(e){
     return;
   }
 
+  drag.lastY = e.clientY;
   moveGhost(e.clientX, e.clientY);
-  highlightSlot(e.clientX, e.clientY);
+
+  if (drag.kind === 'doc') { highlightSlot(e.clientX, e.clientY); return; }
+  reorderTo(e.clientY);
+  setEdge(e.clientY);
 }
 
 function startDrag(){
@@ -1406,16 +1427,112 @@ function startDrag(){
   dropLeftovers();
   drag.active = true;
   tap('medium');
+  hideToast();
   drag.node.classList.add('lift');
 
+  var title = drag.node.querySelector('.t');
   var g = document.createElement('div');
   g.className = 'dghost';
-  g.textContent = drag.r.name;
+  g.textContent = drag.kind === 'doc' ? drag.r.name
+                : (title ? title.textContent : 'Папка');
   document.body.appendChild(g);
   drag.ghost = g;
 
   moveGhost(drag.x, drag.y);
-  showTray(drag.r);
+
+  if (drag.kind === 'doc') showTray(drag.r);
+  else drag.was = folderKeys();
+}
+
+/* ── перестановка папок ──
+   Карточку двигаем прямо в DOM: так сразу видно, куда она встанет,
+   а на отпускании порядок уже готов — его и отправляем на сервер. */
+function folderKeys(){
+  return Array.prototype.map.call(
+    document.querySelectorAll('#list .card[data-c]'),
+    function (n){ return n.getAttribute('data-c'); }).join(',');
+}
+
+function reorderTo(y){
+  var box = drag.node.parentNode;
+  if (!box) return;
+
+  var sibs = Array.prototype.filter.call(box.children, function (n){
+    return n !== drag.node && n.classList && n.classList.contains('card') &&
+           n.getAttribute('data-c') !== null;
+  });
+  if (!sibs.length) return;
+
+  for (var i = 0; i < sibs.length; i++) {
+    var r = sibs[i].getBoundingClientRect();
+    if (y < r.top + r.height / 2) {
+      if (sibs[i].previousElementSibling !== drag.node) {
+        box.insertBefore(drag.node, sibs[i]);
+        tap('soft');
+      }
+      return;
+    }
+  }
+
+  var last = sibs[sibs.length - 1];
+  if (last.nextElementSibling !== drag.node) {
+    box.insertBefore(drag.node, last.nextElementSibling);
+    tap('soft');
+  }
+}
+
+/* У края экрана список едет сам — иначе до дальних папок не дотянуться. */
+var edge = { t: null, d: 0 };
+
+function setEdge(y){
+  var box = el('scroll');
+  var r   = box.getBoundingClientRect();
+  var d   = 0;
+  if      (y < r.top + 90)    d = -11;
+  else if (y > r.bottom - 90) d =  11;
+  if (d === edge.d) return;
+
+  stopEdge();
+  edge.d = d;
+  if (!d) return;
+
+  edge.t = setInterval(function (){
+    if (!drag || !drag.active) { stopEdge(); return; }
+    var before = box.scrollTop;
+    box.scrollTop += edge.d;
+    if (box.scrollTop === before) { stopEdge(); return; }
+    reorderTo(drag.lastY);
+  }, 16);
+}
+
+function stopEdge(){
+  if (edge.t) clearInterval(edge.t);
+  edge.t = null;
+  edge.d = 0;
+}
+
+function saveOrder(was){
+  var now = folderKeys();
+  if (!now || now === was) return;
+
+  tap('medium');
+  toast('Меняю порядок…', 6000);
+
+  callApi({ api: 'folderOrd', init: initData(), owner: navOwner, keys: now })
+    .then(function (res){
+      if (!res || !res.ok) {
+        toast('Не вышло: ' + (res && res.error || 'нет ответа'), 3200);
+        drawList(el('q').value);
+        return;
+      }
+      CATS = res.cats || CATS;
+      toast(res.moved ? 'Порядок и номера обновлены' : 'Порядок сохранён');
+      boot();
+    })
+    .catch(function (e){
+      toast(String(e.message || e), 3200);
+      drawList(el('q').value);
+    });
 }
 
 /* Подчищаем за прерванным перетаскиванием: экран мог перерисоваться. */
@@ -1427,10 +1544,11 @@ function dropLeftovers(){
 }
 
 function moveGhost(x, y){
-  if (drag && drag.ghost) {
-    drag.ghost.style.left = x + 'px';
-    drag.ghost.style.top  = y + 'px';
-  }
+  if (!drag || !drag.ghost) return;
+  var half = drag.ghost.offsetWidth / 2 + 6;
+  var max  = document.documentElement.clientWidth - half;
+  drag.ghost.style.left = Math.max(half, Math.min(x, max)) + 'px';
+  drag.ghost.style.top  = Math.max(46, y) + 'px';
 }
 
 function highlightSlot(x, y){
@@ -1452,15 +1570,18 @@ function onUp(){
   var d = drag;
   drag = null;
   if (d.timer) clearTimeout(d.timer);
+  stopEdge();
   if (!d.active) return;
 
   dropLeftovers();
-  hideTray();
 
   // Не даём отпусканию превратиться в обычный тап по карточке.
   swallowClick = true;
   setTimeout(function(){ swallowClick = false; }, 320);
 
+  if (d.kind === 'folder') { saveOrder(d.was); return; }
+
+  hideTray();
   if (!d.slot) return;
   var ownerKey = d.slot.getAttribute('data-so');
   var catKey   = d.slot.getAttribute('data-sc');
@@ -1483,7 +1604,8 @@ function showTray(r){
        '<span>Другая папка…</span></div>';
 
   var t = el('tray');
-  t.innerHTML = '<div class="trayin">' + h + '</div>';
+  t.innerHTML = '<div class="trayin' + (list.length > 7 ? ' dense' : '') + '">' +
+                h + '</div>';
   t.hidden = false;
   requestAnimationFrame(function(){ t.classList.add('on'); });
 }
@@ -1510,6 +1632,14 @@ function dropMove(r, ownerKey, catKey){
 }
 
 var toastTimer = null;
+
+function hideToast(){
+  clearTimeout(toastTimer);
+  var t = el('toast');
+  t.classList.remove('on');
+  setTimeout(function (){ if (!t.classList.contains('on')) t.hidden = true; }, 250);
+}
+
 function toast(text, ms){
   var t = el('toast');
   t.textContent = text;

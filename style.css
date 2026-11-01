@@ -1,7 +1,7 @@
-/* ═══════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    Архив документов — оформление
    Цвета берутся из темы Telegram, запасные значения — тёмная схема.
-   ═══════════════════════════════════════════════════════════════════ */
+   ════════════════════════════════════════════════════════════════ */
 
 :root{
   --bg:      var(--tg-theme-bg-color, #0f1620);
@@ -453,6 +453,9 @@ nav .dot{
 
 /* ── перетаскивание ── */
 .lift{opacity:.4;transform:scale(.97)}
+.tip{
+  margin:-2px 2px 4px;font-size:12px;line-height:1.45;color:var(--muted);
+}
 /* Имя класса нарочно не .ghost: так называются второстепенные кнопки. */
 .dghost{
   position:fixed;z-index:60;pointer-events:none;
@@ -472,14 +475,17 @@ nav .dot{
   box-shadow:0 -10px 30px rgba(0,0,0,.3);
 }
 .tray.on{transform:none}
+/* Сетка, а не строка: во время перетаскивания лоток не прокрутить
+   пальцем, поэтому все папки должны быть видны сразу. */
 .trayin{
-  display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;
-  padding-bottom:2px;
+  display:grid;gap:8px;
+  grid-template-columns:repeat(auto-fill,minmax(74px,1fr));
+  max-height:42vh;overflow-y:auto;scrollbar-width:none;
 }
 .trayin::-webkit-scrollbar{display:none}
 .slot{
-  flex:0 0 auto;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:5px;width:84px;height:74px;
+  display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:5px;min-width:0;height:72px;
   border-radius:var(--r-md);background:var(--raised);
   border:1.5px dashed var(--line);color:var(--muted);
   transition:background .14s,border-color .14s,color .14s,transform .14s var(--ease);
@@ -487,9 +493,13 @@ nav .dot{
 .slot svg{width:20px;height:20px;stroke-width:1.8;fill:none;stroke:currentColor}
 .slot.other svg{fill:currentColor;stroke:none}
 .slot span{
-  font-size:10.5px;line-height:1.2;text-align:center;max-width:76px;
+  font-size:10.5px;line-height:1.2;text-align:center;max-width:100%;
+  padding:0 4px;overflow-wrap:anywhere;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 }
+.trayin.dense .slot{height:60px;gap:3px}
+.trayin.dense .slot svg{width:17px;height:17px}
+.trayin.dense .slot span{font-size:10px}
 .slot.hot{
   background:rgba(62,139,255,.18);border-color:var(--accent);
   color:var(--accent);transform:scale(1.06);
