@@ -27,6 +27,9 @@
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* Атрибут hidden слабее правил с классами — без этого он не работает
+   на элементах, которым CSS задаёт display. */
+[hidden]{display:none !important}
 
 /* Высота кадра приходит из Telegram через --vh (см. fitViewport в app.js).
    Страница — колонка: шапка, прокручиваемая середина, меню снизу.
@@ -63,7 +66,7 @@ body.sheet-open #scroll{overflow:hidden}
 .screen.on{display:block;animation:fade .22s var(--ease)}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 
-/* ── сводка ────────────────────────────────────────────────────── */
+/* ── сводка ────────────────────────────────────────────────────══ */
 .stats{display:flex;gap:8px;margin:4px 0 20px}
 .stat{
   flex:1;background:var(--surface);border-radius:var(--r-lg);
@@ -364,3 +367,80 @@ nav .dot{
 }
 .linkbox .two{gap:10px}
 .linkbox .two .btn{margin-top:10px}
+
+/* ── панель над списком: крошки и переключатель вида ─────────── */
+.bar{
+  display:flex;align-items:center;gap:10px;margin:0 0 14px;min-height:30px;
+}
+.crumbs{
+  flex:1;min-width:0;display:flex;align-items:center;gap:5px;
+  overflow-x:auto;white-space:nowrap;scrollbar-width:none;
+}
+.crumbs::-webkit-scrollbar{display:none}
+.cr{font-size:12.5px;color:var(--muted);font-weight:600;letter-spacing:.01em}
+.cr.lnk{color:var(--accent);cursor:pointer}
+.cr:last-child{color:var(--fg)}
+.crsep{width:12px;height:12px;flex:0 0 auto;color:var(--muted);opacity:.6;stroke-width:2.4}
+
+.views{flex:0 0 auto;display:flex;gap:2px;background:var(--surface);border-radius:999px;padding:3px}
+.views button{
+  border:none;background:none;cursor:pointer;color:var(--muted);
+  width:32px;height:28px;border-radius:999px;display:grid;place-items:center;
+  transition:background .16s,color .16s;padding:0;
+}
+.views button svg{width:16px;height:16px;stroke-width:1.9}
+.views button.on{background:var(--raised);color:var(--accent)}
+
+/* ── вид «плитка с превью» ──────────────────────────────────── */
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.tile{
+  position:relative;background:var(--surface);border-radius:var(--r-lg);
+  overflow:hidden;cursor:pointer;animation:rise .3s var(--ease) backwards;
+  transition:transform .16s var(--ease);
+}
+.tile:active{transform:scale(.985)}
+.tile .shot{
+  height:130px;display:grid;place-items:center;
+  background:var(--raised);overflow:hidden;
+}
+.tile .shot img{width:100%;height:100%;object-fit:cover;object-position:top;animation:fade .3s var(--ease)}
+.tile .shot .ic{width:44px;height:44px;flex:none;border-radius:14px}
+.tile .shot .ic svg{width:21px;height:21px}
+.tile .cap{padding:10px 12px 12px}
+.tile .cap .t{
+  font-weight:600;font-size:13.5px;line-height:1.3;letter-spacing:-.006em;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  overflow-wrap:anywhere;
+}
+.tile .cap .s{
+  font-size:11.5px;color:var(--muted);margin-top:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tile .badge{position:absolute;top:8px;right:8px;backdrop-filter:blur(6px)}
+
+/* ── вид «компактный список» ───────────────────────────────── */
+.rowsbox{border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+.line{
+  display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;
+  border-bottom:1px solid var(--line);animation:rise .25s var(--ease) backwards;
+}
+.line:last-child{border-bottom:none}
+.line:active{background:var(--raised)}
+.line .nm{
+  flex:1;min-width:0;font-size:14px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.line .pt{
+  flex:0 0 auto;max-width:38%;font-size:11.5px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* ── меню папки ──────────────────────────────────────────────── */
+.dots{
+  flex:0 0 auto;border:none;background:none;cursor:pointer;color:var(--muted);
+  width:32px;height:32px;border-radius:50%;display:grid;place-items:center;padding:0;
+  transition:background .16s,color .16s;
+}
+.dots svg{width:18px;height:18px}
+.dots:active{background:var(--raised);color:var(--fg)}
+.card.nav{cursor:pointer}

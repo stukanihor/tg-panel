@@ -55,6 +55,15 @@
     <g id="i-users" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="9" cy="9" r="3"/><path d="M3.5 19c.6-3 2.9-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/>
       <path d="M16 6.5a3 3 0 0 1 0 5.5M17.5 19c-.2-1.5-.7-2.7-1.5-3.6"/></g>
+    <g id="i-dots" fill="currentColor" stroke="none">
+      <circle cx="6" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18" cy="12" r="1.7"/></g>
+    <g id="i-grid" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/>
+      <rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></g>
+    <g id="i-rows" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="5" width="16" height="6" rx="1.6"/><rect x="4" y="13" width="16" height="6" rx="1.6"/></g>
+    <g id="i-lines" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h16M4 12h16M4 17h16"/></g>
     <g id="i-bin" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4 7h16M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7"/>
       <path d="M6.5 7l.8 11.6A1.5 1.5 0 0 0 8.8 20h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/>
@@ -80,6 +89,14 @@
   <div class="search">
     <svg viewBox="0 0 24 24"><use href="#i-search"/></svg>
     <input id="q" placeholder="Название, организация, номер…" autocomplete="off">
+  </div>
+  <div class="bar">
+    <div class="crumbs" id="crumbs"></div>
+    <div class="views" id="views" hidden>
+      <button data-v="grid"    aria-label="Плитка"><svg viewBox="0 0 24 24"><use href="#i-grid"/></svg></button>
+      <button data-v="list"    aria-label="Список"><svg viewBox="0 0 24 24"><use href="#i-rows"/></svg></button>
+      <button data-v="compact" aria-label="Компактно"><svg viewBox="0 0 24 24"><use href="#i-lines"/></svg></button>
+    </div>
   </div>
   <div id="list"></div>
 </section>
