@@ -1409,7 +1409,7 @@ function startDrag(){
   drag.node.classList.add('lift');
 
   var g = document.createElement('div');
-  g.className = 'ghost';
+  g.className = 'dghost';
   g.textContent = drag.r.name;
   document.body.appendChild(g);
   drag.ghost = g;
@@ -1420,7 +1420,7 @@ function startDrag(){
 
 /* Подчищаем за прерванным перетаскиванием: экран мог перерисоваться. */
 function dropLeftovers(){
-  Array.prototype.forEach.call(document.querySelectorAll('.ghost'), function(g){ g.remove(); });
+  Array.prototype.forEach.call(document.querySelectorAll('.dghost'), function(g){ g.remove(); });
   Array.prototype.forEach.call(document.querySelectorAll('.lift'), function(n){
     n.classList.remove('lift');
   });
