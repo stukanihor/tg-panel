@@ -838,6 +838,7 @@ function toggleFav(r){
       r.fav = want;
       b.classList.toggle('on', want);
       b.querySelector('span').textContent = want ? 'В избранном' : 'В избранное';
+      if (want) fx('star', 'В избранном');
       drawList(el('q').value);
       drawDeadlines();
     })
@@ -913,8 +914,12 @@ function moveSheet(r, pickedOwner){
           })
       : Promise.resolve(catKey);
 
+    var went = '';
+
     ready
       .then(function(key){
+        var c = catOf(ownerKey, key);
+        went = c ? c.label : fresh;
         return callApi({ api: 'move', init: initData(), link: r.link, name: r.name,
                          owner: ownerKey, cat: key });
       })
@@ -922,6 +927,7 @@ function moveSheet(r, pickedOwner){
         if (!res || !res.ok) throw new Error(res && res.error || 'нет ответа');
         closeSheet();
         tap('medium');
+        fx('move', 'Перенесено в «' + went + '»');
         boot();
       })
       .catch(function(e){
@@ -1834,6 +1840,7 @@ function onUp(){
 
   if (d.kind === 'folder') { saveOrder(d.was); return; }
 
+  if (d.slot && typeof fxSlot === 'function') fxSlot(d.slot);
   hideTray();
   if (!d.slot) return;
   var ownerKey = d.slot.getAttribute('data-so');
@@ -1878,10 +1885,16 @@ function dropMove(r, ownerKey, catKey){
     .then(function(res){
       if (!res || !res.ok) { toast('Не вышло: ' + (res && res.error || 'нет ответа'), 3200); return; }
       tap('medium');
-      toast('Перенесено в «' + (c ? c.label : '') + '»');
+      fx('move', 'Перенесено в «' + (c ? c.label : '') + '»');
       boot();
     })
     .catch(function(e){ toast(String(e.message || e), 3200); });
+}
+
+/* Анимации живут в fx.js. Если тот не подгрузился — обходимся тостом. */
+function fx(kind, text){
+  if (typeof fxShow === 'function') fxShow(kind, text);
+  else if (text) toast(text);
 }
 
 var toastTimer = null;
