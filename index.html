@@ -5,599 +5,106 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Архив документов</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>
-  :root{
-    --bg:     var(--tg-theme-bg-color, #17212b);
-    --card:   var(--tg-theme-secondary-bg-color, #232e3c);
-    --fg:     var(--tg-theme-text-color, #f5f5f5);
-    --muted:  var(--tg-theme-hint-color, #8d9aa8);
-    --accent: var(--tg-theme-button-color, #3a86ff);
-    --onacc:  var(--tg-theme-button-text-color, #fff);
-    --line:   rgba(127,127,127,.22);
-    --red:    #e5484d;
-    --amber:  #d8a200;
-    --green:  #30a46c;
-  }
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  body{
-    margin:0;background:var(--bg);color:var(--fg);
-    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    padding-bottom:env(safe-area-inset-bottom);
-  }
-  header{
-    position:sticky;top:0;z-index:5;background:var(--bg);
-    padding:10px 16px 0;border-bottom:1px solid var(--line);
-  }
-  .tabs{display:flex;gap:4px}
-  .tab{
-    flex:1;padding:9px 4px;text-align:center;font-size:14px;font-weight:600;
-    color:var(--muted);border:none;background:none;cursor:pointer;
-    border-bottom:2px solid transparent;font-family:inherit;
-  }
-  .tab.on{color:var(--fg);border-bottom-color:var(--accent)}
-  main{padding:14px 16px 28px}
-
-  .group{margin:0 0 20px}
-  .group h2{
-    margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;
-    text-transform:uppercase;color:var(--muted);
-  }
-  .card{
-    background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;
-    cursor:pointer;border-left:3px solid transparent;
-  }
-  .card.red{border-left-color:var(--red)}
-  .card.amber{border-left-color:var(--amber)}
-  .card.green{border-left-color:var(--green)}
-  .card .t{font-weight:600;margin-bottom:3px}
-  .card .s{font-size:13px;color:var(--muted)}
-  .pill{
-    display:inline-block;padding:1px 7px;border-radius:999px;
-    font-size:11px;font-weight:700;margin-left:6px;vertical-align:1px;
-  }
-  .pill.red{background:rgba(229,72,77,.18);color:var(--red)}
-  .pill.amber{background:rgba(216,162,0,.18);color:var(--amber)}
-
-  input,textarea{
-    width:100%;background:var(--card);color:var(--fg);border:1px solid var(--line);
-    border-radius:10px;padding:11px 13px;font:inherit;outline:none;
-  }
-  input:focus,textarea:focus{border-color:var(--accent)}
-  textarea{resize:vertical;min-height:84px}
-  button.primary{
-    width:100%;margin-top:10px;padding:12px;border:none;border-radius:10px;
-    background:var(--accent);color:var(--onacc);font:inherit;font-weight:600;cursor:pointer;
-  }
-  button.primary:disabled{opacity:.5}
-
-  .empty{color:var(--muted);text-align:center;padding:36px 10px;font-size:14px;line-height:1.5}
-  .answer{
-    background:var(--card);border-radius:12px;padding:14px;margin-top:14px;
-    white-space:pre-wrap;font-size:14px;line-height:1.5;
-  }
-  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-  .chip{
-    background:var(--card);border:1px solid var(--line);border-radius:999px;
-    padding:6px 11px;font-size:13px;color:var(--muted);cursor:pointer;
-  }
-
-  .sheet{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:none;align-items:flex-end}
-  .sheet.on{display:flex}
-  .sheet .inner{
-    background:var(--bg);width:100%;max-height:88vh;overflow:auto;
-    border-radius:16px 16px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));
-  }
-  .sheet h3{margin:0 0 14px;font-size:17px}
-  .row{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
-  .row .k{color:var(--muted);flex:0 0 112px}
-  .row .v{flex:1;word-break:break-word}
-  .note{margin-top:12px;font-size:14px;color:var(--muted);line-height:1.5}
-  .filebtn{
-    display:block;text-align:center;padding:14px;border-radius:10px;
-    background:var(--accent);color:var(--onacc);font-weight:600;cursor:pointer;
-  }
-  .hint{color:var(--muted);font-size:13px;margin-top:10px;line-height:1.5;text-align:center}
-  .field{margin-bottom:11px}
-  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
-  select{
-    width:100%;background:var(--card);color:var(--fg);border:1px solid var(--line);
-    border-radius:10px;padding:11px 13px;font:inherit;outline:none;
-  }
-  .two{display:flex;gap:10px}
-  .two .field{flex:1}
-  .warn{
-    background:rgba(216,162,0,.14);border-left:3px solid var(--amber);
-    border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px;line-height:1.5;
-  }
-  .ghost{
-    width:100%;margin-top:8px;padding:12px;border-radius:10px;font:inherit;font-weight:600;
-    background:none;color:var(--fg);border:1px solid var(--line);cursor:pointer;
-  }
-  a.open{
-    display:block;text-align:center;margin-top:16px;padding:12px;border-radius:10px;
-    background:var(--accent);color:var(--onacc);text-decoration:none;font-weight:600;
-  }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header>
-  <div class="tabs">
-    <button class="tab on" data-tab="deadlines">Сроки</button>
-    <button class="tab"    data-tab="archive">Архив</button>
-    <button class="tab"    data-tab="ask">Вопрос</button>
-    <button class="tab"    data-tab="add">Добавить</button>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <g id="i-clock" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g>
+    <g id="i-folder" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></g>
+    <g id="i-ask" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12a8 8 0 1 1-3.2-6.4"/><path d="M9.5 9a2.6 2.6 0 1 1 3.4 2.5c-.6.2-.9.8-.9 1.4v.6"/>
+      <circle cx="12" cy="17" r=".6" fill="currentColor"/></g>
+    <g id="i-plus" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M12 8.5v7M8.5 12h7"/></g>
+    <g id="i-search" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></g>
+    <g id="i-chev" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m9 6 6 6-6 6"/></g>
+    <g id="i-down" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m6 9 6 6 6-6"/></g>
+    <g id="i-up" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></g>
+    <g id="i-link" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 11a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 0 0 5.7 5.7l1-1"/>
+      <path d="M10 13a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 0 0-5.7-5.7l-1 1"/></g>
+    <g id="i-doc" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></g>
+    <g id="i-id" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/>
+      <path d="M6 16c.6-1.3 1.7-2 3-2s2.4.7 3 2M15 10h3M15 13.5h3"/></g>
+    <g id="i-shield" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6z"/></g>
+    <g id="i-heart" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20s-7-4.3-7-9a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 4.7-7 9-7 9z"/></g>
+    <g id="i-euro" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16.5 6.5A6 6 0 0 0 7 11v2a6 6 0 0 0 9.5 4.5M4.5 11h7M4.5 14h7"/></g>
+    <g id="i-case" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/></g>
+    <g id="i-car" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 16v2M19 16v2M4 15l1.4-5A2 2 0 0 1 7.3 8.5h9.4a2 2 0 0 1 1.9 1.5L20 15"/>
+      <rect x="3" y="15" width="18" height="2.5" rx="1"/></g>
+    <g id="i-home" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m4 10 8-6 8 6v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M10 20.5v-6h4v6"/></g>
+    <g id="i-umbrella" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3.5 12a8.5 8.5 0 0 1 17 0z"/><path d="M12 12v6.5a2 2 0 0 0 4 0"/></g>
+    <g id="i-users" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="9" cy="9" r="3"/><path d="M3.5 19c.6-3 2.9-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/>
+      <path d="M16 6.5a3 3 0 0 1 0 5.5M17.5 19c-.2-1.5-.7-2.7-1.5-3.6"/></g>
+    <g id="i-bank" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 10h16M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18M12 3.5 20 8H4z"/></g>
+  </defs>
+</svg>
+
+<div class="head">
+  <h1 id="title">Сроки</h1>
+  <p id="subtitle">Загружаю архив…</p>
+</div>
+
+<section class="screen on" id="s-deadlines">
+  <div id="stats"></div>
+  <div id="deadlines"></div>
+</section>
+
+<section class="screen" id="s-archive">
+  <div class="search">
+    <svg viewBox="0 0 24 24"><use href="#i-search"/></svg>
+    <input id="q" placeholder="Название, организация, номер…" autocomplete="off">
   </div>
-</header>
-
-<main>
-  <section id="deadlines"></section>
-
-  <section id="archive" hidden>
-    <input id="q" placeholder="Поиск по названию, организации, номеру…" autocomplete="off">
-    <div id="list" style="margin-top:14px"></div>
-  </section>
-
-  <section id="ask" hidden>
-    <textarea id="question" placeholder="Например: на сколько могут поднять аренду по договору?"></textarea>
-    <button class="primary" id="send">Спросить</button>
-    <div class="chips">
-      <span class="chip">за сколько предупреждать о выезде</span>
-      <span class="chip">какой залог за квартиру</span>
-      <span class="chip">что входит в страховку Generali</span>
-      <span class="chip">когда истекает Aufenthaltstitel</span>
-    </div>
-    <div id="answer"></div>
-  </section>
-
-  <section id="add" hidden>
-    <div id="addStart">
-      <label class="filebtn">
-        Выбрать фото или PDF
-        <input type="file" id="file" accept="image/*,application/pdf" multiple hidden>
-      </label>
-      <div class="hint">
-        Несколько фотографий одного документа склею в один PDF.
-        Предел — 8 МБ на файл.
-      </div>
-    </div>
-    <div id="addBody"></div>
-  </section>
-</main>
-
-<div class="sheet" id="sheet"><div class="inner" id="sheetBody"></div></div>
-
-<script>
-/* ═══════════════════════════════════════════════════════════════
-   Адрес веб-приложения Apps Script. Если создашь НОВОЕ развёртывание
-   вместо новой версии — адрес сменится, поменяй его здесь.
-   ═══════════════════════════════════════════════════════════════ */
-var API = 'https://script.google.com/macros/s/AKfycbxUus4MoPjOp_6R30VUspQyZNeRUPs2yGFN9PnvP8SQY2IfEjbU4QnOxGlcpQETy8XQ/exec';
-
-
-var tg     = window.Telegram ? window.Telegram.WebApp : null;
-var rows   = [];
-var OWNERS = [];
-var CATS   = {};
-var draft  = null;   // то, что сейчас загружено и ждёт подтверждения
-
-if (tg) { tg.ready(); tg.expand(); }
-
-function esc(s){
-  return String(s == null ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function initData(){ return (tg && tg.initData) ? tg.initData : ''; }
-
-/* ── обращение к Apps Script ────────────────────────────────── */
-function callApi(params){
-  return fetch(API, { method: 'POST', body: JSON.stringify(params) })
-    .then(function(r){ return r.json(); })
-    .catch(function(err){
-      // Запасной путь — только для лёгких запросов: файл так не отправить.
-      if (params.files) throw new Error('не удалось отправить файл на сервер');
-      var qs = Object.keys(params)
-        .filter(function(k){ return typeof params[k] !== 'object'; })
-        .map(function(k){ return k + '=' + encodeURIComponent(params[k]); })
-        .join('&');
-      return jsonp(qs);
-    });
-}
-
-var jsonpSeq = 0;
-function jsonp(qs){
-  return new Promise(function(resolve, reject){
-    var name = '__cb' + (++jsonpSeq) + '_' + Date.now();
-    var el   = document.createElement('script');
-    var done = false;
-
-    window[name] = function(data){
-      done = true;
-      resolve(data);
-      delete window[name];
-      el.remove();
-    };
-    el.onerror = function(){
-      if (!done) { reject(new Error('сервер недоступен')); el.remove(); }
-    };
-    el.src = API + '?' + qs + '&callback=' + name;
-    document.body.appendChild(el);
-
-    setTimeout(function(){
-      if (!done) { reject(new Error('сервер не ответил за 90 секунд')); }
-    }, 90000);
-  });
-}
-
-/* ── загрузка ─────────────────────────────────────────────── */
-function boot(){
-  var box = document.getElementById('deadlines');
-
-  if (!initData()) {
-    box.innerHTML = '<div class="empty">Открой приложение из Telegram — ' +
-                    'кнопкой «Архив» рядом со скрепкой.<br>' +
-                    'По прямой ссылке оно не работает намеренно.</div>';
-    return;
-  }
-
-  box.innerHTML = '<div class="empty">Загружаю архив…</div>';
-
-  callApi({ api: 'bootstrap', init: initData() })
-    .then(function(res){
-      if (!res || !res.ok) {
-        box.innerHTML = '<div class="empty">Не получилось: ' +
-          esc(res && res.error || 'нет ответа') + '</div>';
-        return;
-      }
-      rows   = res.rows  || [];
-      OWNERS = res.owners || [];
-      CATS   = res.cats   || {};
-      renderDeadlines();
-      renderList('');
-    })
-    .catch(function(e){
-      box.innerHTML = '<div class="empty">Ошибка связи: ' + esc(e.message || e) + '</div>';
-    });
-}
-
-/* ── экран «Сроки» ────────────────────────────────────────── */
-function bucket(r){
-  if (r.days === null || !r.until) return 'ok';
-  if (r.days < 0)   return 'over';
-  if (r.days <= 60) return 'soon';
-  return 'ok';
-}
-
-function renderDeadlines(){
-  var over = rows.filter(function(r){ return bucket(r) === 'over'; });
-  var soon = rows.filter(function(r){ return bucket(r) === 'soon'; });
-  var rest = rows.filter(function(r){ return bucket(r) === 'ok'; });
-
-  over.sort(function(a,b){ return a.days - b.days; });
-  soon.sort(function(a,b){ return a.days - b.days; });
-
-  var h = '';
-  if (over.length) h += group('Просрочено', over, 'red');
-  if (soon.length) h += group('Истекает в ближайшие 60 дней', soon, 'amber');
-  h += group('В порядке · ' + rest.length, rest, 'green');
-  if (!rows.length) h = '<div class="empty">В архиве пока пусто.</div>';
-
-  document.getElementById('deadlines').innerHTML = h;
-  bindCards();
-}
-
-function group(title, list, color){
-  var h = '<div class="group"><h2>' + esc(title) + '</h2>';
-  list.forEach(function(r){
-    var i = rows.indexOf(r);
-    var tail = '';
-    if (r.days !== null && r.days < 0) tail = '<span class="pill red">просрочен</span>';
-    else if (r.days !== null && r.days <= 60) tail = '<span class="pill amber">' + r.days + ' дн.</span>';
-
-    var sub = r.owner + ' · ' + r.cat;
-    if (r.until) sub += ' · до ' + r.until;
-
-    h += '<div class="card ' + color + '" data-i="' + i + '">' +
-           '<div class="t">' + esc(r.name) + tail + '</div>' +
-           '<div class="s">' + esc(sub) + '</div>' +
-         '</div>';
-  });
-  return h + '</div>';
-}
-
-/* ── экран «Архив» ────────────────────────────────────────── */
-function renderList(query){
-  var q = String(query || '').trim().toLowerCase();
-  var hit = rows.filter(function(r){
-    if (!q) return true;
-    return (r.name + ' ' + r.org + ' ' + r.number + ' ' + r.cat + ' ' +
-            r.owner + ' ' + r.note).toLowerCase().indexOf(q) !== -1;
-  });
-
-  if (!hit.length) {
-    document.getElementById('list').innerHTML = '<div class="empty">Ничего не нашлось.</div>';
-    return;
-  }
-
-  var byOwner = {};
-  hit.forEach(function(r){ (byOwner[r.owner] = byOwner[r.owner] || []).push(r); });
-
-  var h = '';
-  Object.keys(byOwner).sort().forEach(function(owner){
-    h += '<div class="group"><h2>' + esc(owner) + '</h2>';
-    byOwner[owner].forEach(function(r){
-      var i = rows.indexOf(r);
-      h += '<div class="card" data-i="' + i + '">' +
-             '<div class="t">' + esc(r.name) + '</div>' +
-             '<div class="s">' + esc(r.cat + (r.org ? ' · ' + r.org : '')) + '</div>' +
-           '</div>';
-    });
-    h += '</div>';
-  });
-
-  document.getElementById('list').innerHTML = h;
-  bindCards();
-}
-
-/* ── карточка документа ───────────────────────────────────── */
-function bindCards(){
-  Array.prototype.forEach.call(document.querySelectorAll('.card'), function(el){
-    el.onclick = function(){ openSheet(rows[Number(el.getAttribute('data-i'))]); };
-  });
-}
-
-function line(k, v){
-  if (!v) return '';
-  return '<div class="row"><div class="k">' + esc(k) + '</div>' +
-         '<div class="v">' + esc(v) + '</div></div>';
-}
-
-function openSheet(r){
-  if (!r) return;
-  var h = '<h3>' + esc(r.name) + '</h3>' +
-    line('Кому', r.owner) +
-    line('Папка', r.cat) +
-    line('Организация', r.org) +
-    line('Номер', r.number) +
-    line('Выдан', r.issued) +
-    line('Действует до', r.until || 'бессрочно') +
-    line('Статус', r.status);
-  if (r.note) h += '<div class="note">' + esc(r.note) + '</div>';
-  if (r.link) h += '<a class="open" href="' + esc(r.link) + '" target="_blank">Открыть файл</a>';
-
-  document.getElementById('sheetBody').innerHTML = h;
-  document.getElementById('sheet').classList.add('on');
-  if (tg && tg.BackButton) tg.BackButton.show();
-}
-
-function closeSheet(){
-  document.getElementById('sheet').classList.remove('on');
-  if (tg && tg.BackButton) tg.BackButton.hide();
-}
-
-document.getElementById('sheet').onclick = function(ev){
-  if (ev.target.id === 'sheet') closeSheet();
-};
-if (tg && tg.BackButton) tg.BackButton.onClick(closeSheet);
-
-/* ── экран «Вопрос» ───────────────────────────────────────── */
-function askNow(){
-  var q   = document.getElementById('question').value.trim();
-  var box = document.getElementById('answer');
-  if (!q) return;
-
-  document.getElementById('send').disabled = true;
-  box.innerHTML = '<div class="answer">Ищу по архиву… до полуминуты, ' +
-                  'если придётся открывать документы.</div>';
-
-  callApi({ api: 'ask', init: initData(), q: q })
-    .then(function(res){
-      document.getElementById('send').disabled = false;
-      box.innerHTML = '<div class="answer">' +
-        esc(res && res.ok ? res.answer : 'Не получилось: ' + (res && res.error || 'нет ответа')) +
-        '</div>';
-    })
-    .catch(function(e){
-      document.getElementById('send').disabled = false;
-      box.innerHTML = '<div class="answer">Ошибка связи: ' + esc(e.message || e) + '</div>';
-    });
-}
-
-document.getElementById('send').onclick = askNow;
-document.getElementById('q').oninput = function(){ renderList(this.value); };
-
-Array.prototype.forEach.call(document.querySelectorAll('.chip'), function(c){
-  c.onclick = function(){
-    document.getElementById('question').value = c.textContent;
-    askNow();
-  };
-});
-
-/* ── экран «Добавить» ───────────────────────────────────── */
-function resetAdd(){
-  draft = null;
-  document.getElementById('addStart').hidden = false;
-  document.getElementById('addBody').innerHTML = '';
-  document.getElementById('file').value = '';
-}
-
-function readFile(f){
-  return new Promise(function(resolve, reject){
-    var fr = new FileReader();
-    fr.onload  = function(){
-      resolve({ name: f.name, mime: f.type,
-                data: String(fr.result).split(',')[1] });
-    };
-    fr.onerror = function(){ reject(new Error('не смог прочитать ' + f.name)); };
-    fr.readAsDataURL(f);
-  });
-}
-
-document.getElementById('file').onchange = function(){
-  var picked = Array.prototype.slice.call(this.files || []).slice(0, 6);
-  if (!picked.length) return;
-
-  var heavy = picked.filter(function(f){ return f.size > 8 * 1024 * 1024; });
-  if (heavy.length) {
-    alert('Слишком тяжёлый файл: ' + heavy[0].name +
-          ' (' + (heavy[0].size/1024/1024).toFixed(1) + ' МБ). Предел 8 МБ.');
-    this.value = '';
-    return;
-  }
-
-  document.getElementById('addStart').hidden = true;
-  document.getElementById('addBody').innerHTML =
-    '<div class="empty">⏳ Загружаю и читаю документ…<br>Это занимает до полуминуты.</div>';
-
-  Promise.all(picked.map(readFile))
-    .then(function(files){
-      return callApi({ api: 'upload', init: initData(), files: files });
-    })
-    .then(function(res){
-      if (!res || !res.ok) {
-        document.getElementById('addBody').innerHTML =
-          '<div class="empty">Не получилось: ' + esc(res && res.error || 'нет ответа') +
-          '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
-        return;
-      }
-      draft = res.doc || {};
-      draft.fileId = res.fileId;
-      renderForm(res.note || '');
-    })
-    .catch(function(e){
-      document.getElementById('addBody').innerHTML =
-        '<div class="empty">Ошибка связи: ' + esc(e.message || e) +
-        '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
-    });
-};
-
-function sel(id, label, options, chosen){
-  var h = '<div class="field"><label>' + esc(label) + '</label><select id="' + id + '">';
-  h += '<option value="">— не выбрано —</option>';
-  options.forEach(function(o){
-    h += '<option value="' + esc(o.v) + '"' + (o.v === chosen ? ' selected' : '') + '>' +
-         esc(o.t) + '</option>';
-  });
-  return h + '</select></div>';
-}
-
-function inp(id, label, value, type){
-  return '<div class="field"><label>' + esc(label) + '</label>' +
-    '<input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(value || '') + '"></div>';
-}
-
-function renderForm(note){
-  var ownerOpts = OWNERS.map(function(o){ return { v: o.key, t: o.label }; });
-  var catList   = (CATS[draft.owner] || []).map(function(c){ return { v: c.key, t: c.label }; });
-
-  var h = '';
-  if (note) h += '<div class="warn">' + esc(note) + '</div>';
-
-  h += inp('f_name', 'Название документа', draft.name) +
-       sel('f_owner', 'Кому принадлежит', ownerOpts, draft.owner) +
-       sel('f_cat',   'Папка',            catList,   draft.cat) +
-       inp('f_org',   'Организация',      draft.org) +
-       inp('f_num',   'Номер',            draft.number) +
-       '<div class="two">' +
-         inp('f_issue',  'Дата выдачи',  draft.issue,  'date') +
-         inp('f_expiry', 'Действует до', draft.expiry, 'date') +
-       '</div>' +
-       '<div class="field"><label>Заметка</label>' +
-       '<textarea id="f_note" style="min-height:64px">' + esc(draft.note || '') + '</textarea></div>' +
-       '<button class="primary" id="f_save">Сохранить в архив</button>' +
-       '<button class="ghost" id="f_cancel">Отменить и удалить файл</button>';
-
-  document.getElementById('addBody').innerHTML = h;
-
-  document.getElementById('f_owner').onchange = function(){
-    collectForm();
-    draft.cat = '';
-    renderForm(note);
-  };
-  document.getElementById('f_save').onclick   = function(){ saveDoc(false, false); };
-  document.getElementById('f_cancel').onclick = cancelDoc;
-}
-
-function collectForm(){
-  function v(id){ var el = document.getElementById(id); return el ? el.value.trim() : ''; }
-  draft.name   = v('f_name');
-  draft.owner  = v('f_owner');
-  draft.cat    = v('f_cat');
-  draft.org    = v('f_org');
-  draft.number = v('f_num');
-  draft.issue  = v('f_issue');
-  draft.expiry = v('f_expiry');
-  draft.note   = v('f_note');
-}
-
-function saveDoc(replace, keepBoth){
-  collectForm();
-  if (!draft.owner || !draft.cat) { alert('Выбери, кому принадлежит документ и в какую папку.'); return; }
-
-  var body = JSON.parse(JSON.stringify(draft));
-  body.replace  = !!replace;
-  body.keepBoth = !!keepBoth;
-
-  document.getElementById('addBody').innerHTML =
-    '<div class="empty">⏳ Сохраняю в Drive и пишу в реестр…</div>';
-
-  callApi({ api: 'save', init: initData(), doc: body })
-    .then(function(res){
-      if (res && res.duplicate) { renderDup(res.duplicate); return; }
-      if (!res || !res.ok) {
-        document.getElementById('addBody').innerHTML =
-          '<div class="empty">Не получилось: ' + esc(res && res.error || 'нет ответа') +
-          '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
-        return;
-      }
-      document.getElementById('addBody').innerHTML =
-        '<div class="warn" style="border-left-color:var(--green);background:rgba(48,164,108,.14)">' +
-          '✅ Сохранено<br>' + esc(res.title) + '<br>' + esc(res.where) + '</div>' +
-        '<a class="open" href="' + esc(res.url) + '" target="_blank">Открыть файл</a>' +
-        '<button class="ghost" onclick="resetAdd()">Добавить ещё</button>';
-      boot();   // обновляем списки на других вкладках
-    })
-    .catch(function(e){
-      document.getElementById('addBody').innerHTML =
-        '<div class="empty">Ошибка связи: ' + esc(e.message || e) +
-        '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
-    });
-}
-
-function renderDup(dup){
-  document.getElementById('addBody').innerHTML =
-    '<div class="warn">⚠️ Такой документ, похоже, уже есть — ' + esc(dup.why) + '.<br><br>' +
-      'В архиве: ' + esc(dup.name) + (dup.issued ? ', выдан ' + esc(dup.issued) : '') + '<br>' +
-      'Новый: ' + esc(draft.name || 'без названия') +
-      (draft.issue ? ', выдан ' + esc(draft.issue) : '') + '</div>' +
-    '<button class="primary" id="d_replace">Заменить старый</button>' +
-    '<button class="ghost" id="d_both">Оставить оба</button>' +
-    '<button class="ghost" id="d_cancel">Отменить</button>';
-
-  document.getElementById('d_replace').onclick = function(){ saveDoc(true, false); };
-  document.getElementById('d_both').onclick    = function(){ saveDoc(false, true); };
-  document.getElementById('d_cancel').onclick  = cancelDoc;
-}
-
-function cancelDoc(){
-  var id = draft && draft.fileId;
-  resetAdd();
-  if (id) callApi({ api: 'discard', init: initData(), fileId: id });
-}
-
-/* ── вкладки ──────────────────────────────────────────────── */
-Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t){
-  t.onclick = function(){
-    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){
-      x.classList.toggle('on', x === t);
-    });
-    ['deadlines','archive','ask','add'].forEach(function(id){
-      document.getElementById(id).hidden = (id !== t.getAttribute('data-tab'));
-    });
-  };
-});
-
-boot();
-</script>
+  <div id="list"></div>
+</section>
+
+<section class="screen" id="s-ask">
+  <div id="thread"></div>
+  <textarea id="question" placeholder="Например: на сколько могут поднять аренду по договору?"></textarea>
+  <button class="btn primary" id="send">Спросить</button>
+  <div class="chips" id="chips"></div>
+</section>
+
+<section class="screen" id="s-add">
+  <div id="addStart">
+    <label class="drop">
+      <span class="ring"><svg viewBox="0 0 24 24"><use href="#i-up"/></svg></span>
+      <b>Выбрать фото или PDF</b>
+      <span>Несколько снимков одного документа склею в один файл.<br>До 8 МБ на файл.</span>
+      <input type="file" id="file" accept="image/*,application/pdf" multiple hidden>
+    </label>
+  </div>
+  <div id="addBody"></div>
+</section>
+
+<div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
+
+<nav>
+  <button class="on" data-s="deadlines"><svg viewBox="0 0 24 24"><use href="#i-clock"/></svg>Сроки</button>
+  <button data-s="archive"><svg viewBox="0 0 24 24"><use href="#i-folder"/></svg>Архив</button>
+  <button data-s="ask"><svg viewBox="0 0 24 24"><use href="#i-ask"/></svg>Вопрос</button>
+  <button data-s="add"><svg viewBox="0 0 24 24"><use href="#i-plus"/></svg>Добавить</button>
+</nav>
+
+<script src="app.js"></script>
 </body>
 </html>
