@@ -419,7 +419,8 @@ function drawShare(r){
       '<input id="sh_mail" type="email" inputmode="email" autocomplete="email" ' +
       'placeholder="name@example.com"></div>' +
     '<button class="btn ghost" id="sh_mailgo">Отправить письмом</button>' +
-    '<div class="hint">Документ уйдёт вложением, до 24 МБ.</div>' +
+    '<div class="hint">Документ уйдёт вложением, до 24 МБ. Копия останется ' +
+      'в «Отправленных» у i@4poll.com.</div>' +
 
     '<div class="swrow"><div class="swtext"><b>Доступ по ссылке</b>' +
       '<span>Пока включён, файл откроет любой, у кого есть ссылка</span></div>' +
@@ -754,6 +755,8 @@ function drawDup(dup){
   el('addBody').innerHTML =
     '<div class="notice"><b>Похоже, такой документ уже есть</b> — ' + esc(dup.why) + '.<br><br>' +
       'В архиве: ' + esc(dup.name) + (dup.issued ? ', выдан ' + esc(dup.issued) : '') + '<br>' +
+      (dup.owner ? '<span style="color:var(--muted)">' +
+                   esc(dup.owner + ' → ' + dup.cat) + '</span><br>' : '') +
       'Новый: ' + esc(draft.name || 'без названия') +
       (draft.issue ? ', выдан ' + esc(draft.issue) : '') + '</div>' +
     '<button class="btn primary" id="d_rep">Заменить старый</button>' +
