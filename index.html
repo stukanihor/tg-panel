@@ -92,6 +92,27 @@
   .row .k{color:var(--muted);flex:0 0 112px}
   .row .v{flex:1;word-break:break-word}
   .note{margin-top:12px;font-size:14px;color:var(--muted);line-height:1.5}
+  .filebtn{
+    display:block;text-align:center;padding:14px;border-radius:10px;
+    background:var(--accent);color:var(--onacc);font-weight:600;cursor:pointer;
+  }
+  .hint{color:var(--muted);font-size:13px;margin-top:10px;line-height:1.5;text-align:center}
+  .field{margin-bottom:11px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  select{
+    width:100%;background:var(--card);color:var(--fg);border:1px solid var(--line);
+    border-radius:10px;padding:11px 13px;font:inherit;outline:none;
+  }
+  .two{display:flex;gap:10px}
+  .two .field{flex:1}
+  .warn{
+    background:rgba(216,162,0,.14);border-left:3px solid var(--amber);
+    border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px;line-height:1.5;
+  }
+  .ghost{
+    width:100%;margin-top:8px;padding:12px;border-radius:10px;font:inherit;font-weight:600;
+    background:none;color:var(--fg);border:1px solid var(--line);cursor:pointer;
+  }
   a.open{
     display:block;text-align:center;margin-top:16px;padding:12px;border-radius:10px;
     background:var(--accent);color:var(--onacc);text-decoration:none;font-weight:600;
@@ -105,6 +126,7 @@
     <button class="tab on" data-tab="deadlines">Сроки</button>
     <button class="tab"    data-tab="archive">Архив</button>
     <button class="tab"    data-tab="ask">Вопрос</button>
+    <button class="tab"    data-tab="add">Добавить</button>
   </div>
 </header>
 
@@ -127,20 +149,37 @@
     </div>
     <div id="answer"></div>
   </section>
+
+  <section id="add" hidden>
+    <div id="addStart">
+      <label class="filebtn">
+        Выбрать фото или PDF
+        <input type="file" id="file" accept="image/*,application/pdf" multiple hidden>
+      </label>
+      <div class="hint">
+        Несколько фотографий одного документа склею в один PDF.
+        Предел — 8 МБ на файл.
+      </div>
+    </div>
+    <div id="addBody"></div>
+  </section>
 </main>
 
 <div class="sheet" id="sheet"><div class="inner" id="sheetBody"></div></div>
 
 <script>
 /* ═══════════════════════════════════════════════════════════════
-   Адрес веб-приложения Apps Script. Если переразвернёшь скрипт
-   с новым адресом — поменяй здесь.
+   Адрес веб-приложения Apps Script. Если создашь НОВОЕ развёртывание
+   вместо новой версии — адрес сменится, поменяй его здесь.
    ═══════════════════════════════════════════════════════════════ */
 var API = 'https://script.google.com/macros/s/AKfycbxUus4MoPjOp_6R30VUspQyZNeRUPs2yGFN9PnvP8SQY2IfEjbU4QnOxGlcpQETy8XQ/exec';
 
 
-var tg    = window.Telegram ? window.Telegram.WebApp : null;
-var rows  = [];
+var tg     = window.Telegram ? window.Telegram.WebApp : null;
+var rows   = [];
+var OWNERS = [];
+var CATS   = {};
+var draft  = null;   // то, что сейчас загружено и ждёт подтверждения
 
 if (tg) { tg.ready(); tg.expand(); }
 
@@ -150,17 +189,19 @@ function esc(s){
 }
 function initData(){ return (tg && tg.initData) ? tg.initData : ''; }
 
-/* ── обращение к Apps Script ──────────────────────────────────
-   Сначала обычным запросом. Если браузер не пустит из-за
-   межсайтовых ограничений — через подгрузку скрипта.          */
+/* ── обращение к Apps Script ────────────────────────────────── */
 function callApi(params){
-  var qs = Object.keys(params)
-    .map(function(k){ return k + '=' + encodeURIComponent(params[k]); })
-    .join('&');
-
-  return fetch(API + '?' + qs, { method: 'GET' })
+  return fetch(API, { method: 'POST', body: JSON.stringify(params) })
     .then(function(r){ return r.json(); })
-    .catch(function(){ return jsonp(qs); });
+    .catch(function(err){
+      // Запасной путь — только для лёгких запросов: файл так не отправить.
+      if (params.files) throw new Error('не удалось отправить файл на сервер');
+      var qs = Object.keys(params)
+        .filter(function(k){ return typeof params[k] !== 'object'; })
+        .map(function(k){ return k + '=' + encodeURIComponent(params[k]); })
+        .join('&');
+      return jsonp(qs);
+    });
 }
 
 var jsonpSeq = 0;
@@ -208,7 +249,9 @@ function boot(){
           esc(res && res.error || 'нет ответа') + '</div>';
         return;
       }
-      rows = res.rows || [];
+      rows   = res.rows  || [];
+      OWNERS = res.owners || [];
+      CATS   = res.cats   || {};
       renderDeadlines();
       renderList('');
     })
@@ -370,13 +413,185 @@ Array.prototype.forEach.call(document.querySelectorAll('.chip'), function(c){
   };
 });
 
+/* ── экран «Добавить» ───────────────────────────────────── */
+function resetAdd(){
+  draft = null;
+  document.getElementById('addStart').hidden = false;
+  document.getElementById('addBody').innerHTML = '';
+  document.getElementById('file').value = '';
+}
+
+function readFile(f){
+  return new Promise(function(resolve, reject){
+    var fr = new FileReader();
+    fr.onload  = function(){
+      resolve({ name: f.name, mime: f.type,
+                data: String(fr.result).split(',')[1] });
+    };
+    fr.onerror = function(){ reject(new Error('не смог прочитать ' + f.name)); };
+    fr.readAsDataURL(f);
+  });
+}
+
+document.getElementById('file').onchange = function(){
+  var picked = Array.prototype.slice.call(this.files || []).slice(0, 6);
+  if (!picked.length) return;
+
+  var heavy = picked.filter(function(f){ return f.size > 8 * 1024 * 1024; });
+  if (heavy.length) {
+    alert('Слишком тяжёлый файл: ' + heavy[0].name +
+          ' (' + (heavy[0].size/1024/1024).toFixed(1) + ' МБ). Предел 8 МБ.');
+    this.value = '';
+    return;
+  }
+
+  document.getElementById('addStart').hidden = true;
+  document.getElementById('addBody').innerHTML =
+    '<div class="empty">⏳ Загружаю и читаю документ…<br>Это занимает до полуминуты.</div>';
+
+  Promise.all(picked.map(readFile))
+    .then(function(files){
+      return callApi({ api: 'upload', init: initData(), files: files });
+    })
+    .then(function(res){
+      if (!res || !res.ok) {
+        document.getElementById('addBody').innerHTML =
+          '<div class="empty">Не получилось: ' + esc(res && res.error || 'нет ответа') +
+          '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
+        return;
+      }
+      draft = res.doc || {};
+      draft.fileId = res.fileId;
+      renderForm(res.note || '');
+    })
+    .catch(function(e){
+      document.getElementById('addBody').innerHTML =
+        '<div class="empty">Ошибка связи: ' + esc(e.message || e) +
+        '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
+    });
+};
+
+function sel(id, label, options, chosen){
+  var h = '<div class="field"><label>' + esc(label) + '</label><select id="' + id + '">';
+  h += '<option value="">— не выбрано —</option>';
+  options.forEach(function(o){
+    h += '<option value="' + esc(o.v) + '"' + (o.v === chosen ? ' selected' : '') + '>' +
+         esc(o.t) + '</option>';
+  });
+  return h + '</select></div>';
+}
+
+function inp(id, label, value, type){
+  return '<div class="field"><label>' + esc(label) + '</label>' +
+    '<input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(value || '') + '"></div>';
+}
+
+function renderForm(note){
+  var ownerOpts = OWNERS.map(function(o){ return { v: o.key, t: o.label }; });
+  var catList   = (CATS[draft.owner] || []).map(function(c){ return { v: c.key, t: c.label }; });
+
+  var h = '';
+  if (note) h += '<div class="warn">' + esc(note) + '</div>';
+
+  h += inp('f_name', 'Название документа', draft.name) +
+       sel('f_owner', 'Кому принадлежит', ownerOpts, draft.owner) +
+       sel('f_cat',   'Папка',            catList,   draft.cat) +
+       inp('f_org',   'Организация',      draft.org) +
+       inp('f_num',   'Номер',            draft.number) +
+       '<div class="two">' +
+         inp('f_issue',  'Дата выдачи',  draft.issue,  'date') +
+         inp('f_expiry', 'Действует до', draft.expiry, 'date') +
+       '</div>' +
+       '<div class="field"><label>Заметка</label>' +
+       '<textarea id="f_note" style="min-height:64px">' + esc(draft.note || '') + '</textarea></div>' +
+       '<button class="primary" id="f_save">Сохранить в архив</button>' +
+       '<button class="ghost" id="f_cancel">Отменить и удалить файл</button>';
+
+  document.getElementById('addBody').innerHTML = h;
+
+  document.getElementById('f_owner').onchange = function(){
+    collectForm();
+    draft.cat = '';
+    renderForm(note);
+  };
+  document.getElementById('f_save').onclick   = function(){ saveDoc(false, false); };
+  document.getElementById('f_cancel').onclick = cancelDoc;
+}
+
+function collectForm(){
+  function v(id){ var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+  draft.name   = v('f_name');
+  draft.owner  = v('f_owner');
+  draft.cat    = v('f_cat');
+  draft.org    = v('f_org');
+  draft.number = v('f_num');
+  draft.issue  = v('f_issue');
+  draft.expiry = v('f_expiry');
+  draft.note   = v('f_note');
+}
+
+function saveDoc(replace, keepBoth){
+  collectForm();
+  if (!draft.owner || !draft.cat) { alert('Выбери, кому принадлежит документ и в какую папку.'); return; }
+
+  var body = JSON.parse(JSON.stringify(draft));
+  body.replace  = !!replace;
+  body.keepBoth = !!keepBoth;
+
+  document.getElementById('addBody').innerHTML =
+    '<div class="empty">⏳ Сохраняю в Drive и пишу в реестр…</div>';
+
+  callApi({ api: 'save', init: initData(), doc: body })
+    .then(function(res){
+      if (res && res.duplicate) { renderDup(res.duplicate); return; }
+      if (!res || !res.ok) {
+        document.getElementById('addBody').innerHTML =
+          '<div class="empty">Не получилось: ' + esc(res && res.error || 'нет ответа') +
+          '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
+        return;
+      }
+      document.getElementById('addBody').innerHTML =
+        '<div class="warn" style="border-left-color:var(--green);background:rgba(48,164,108,.14)">' +
+          '✅ Сохранено<br>' + esc(res.title) + '<br>' + esc(res.where) + '</div>' +
+        '<a class="open" href="' + esc(res.url) + '" target="_blank">Открыть файл</a>' +
+        '<button class="ghost" onclick="resetAdd()">Добавить ещё</button>';
+      boot();   // обновляем списки на других вкладках
+    })
+    .catch(function(e){
+      document.getElementById('addBody').innerHTML =
+        '<div class="empty">Ошибка связи: ' + esc(e.message || e) +
+        '</div><button class="ghost" onclick="resetAdd()">Назад</button>';
+    });
+}
+
+function renderDup(dup){
+  document.getElementById('addBody').innerHTML =
+    '<div class="warn">⚠️ Такой документ, похоже, уже есть — ' + esc(dup.why) + '.<br><br>' +
+      'В архиве: ' + esc(dup.name) + (dup.issued ? ', выдан ' + esc(dup.issued) : '') + '<br>' +
+      'Новый: ' + esc(draft.name || 'без названия') +
+      (draft.issue ? ', выдан ' + esc(draft.issue) : '') + '</div>' +
+    '<button class="primary" id="d_replace">Заменить старый</button>' +
+    '<button class="ghost" id="d_both">Оставить оба</button>' +
+    '<button class="ghost" id="d_cancel">Отменить</button>';
+
+  document.getElementById('d_replace').onclick = function(){ saveDoc(true, false); };
+  document.getElementById('d_both').onclick    = function(){ saveDoc(false, true); };
+  document.getElementById('d_cancel').onclick  = cancelDoc;
+}
+
+function cancelDoc(){
+  var id = draft && draft.fileId;
+  resetAdd();
+  if (id) callApi({ api: 'discard', init: initData(), fileId: id });
+}
+
 /* ── вкладки ──────────────────────────────────────────────── */
 Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t){
   t.onclick = function(){
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){
       x.classList.toggle('on', x === t);
     });
-    ['deadlines','archive','ask'].forEach(function(id){
+    ['deadlines','archive','ask','add'].forEach(function(id){
       document.getElementById(id).hidden = (id !== t.getAttribute('data-tab'));
     });
   };
