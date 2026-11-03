@@ -4,7 +4,7 @@
    Адрес веб-приложения Apps Script. Если создашь НОВОЕ развёртывание
    вместо новой версии — адрес сменится, поменяй его здесь.
    ════════════════════════════════════════════════════════════════ */
-var API = 'https://script.google.com/macros/s/AKfycbxUus4MoPjOp_6R30VUspQyZNeRUPs2yGFN9PnvP8SQY2IfEjbU4QnOxGlcpQETy8XQ/exec';
+var API = 'https://script.google.com/macros/s/AKfycbx5ymhDr9J4GTxZWDbGD0E96kM6Dcn6TSnaNAv8eOgechELqIplWS8Mjscw5nSfFbW7/exec';
 
 var tg     = window.Telegram ? window.Telegram.WebApp : null;
 var rows   = [];
