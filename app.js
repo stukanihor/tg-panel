@@ -869,7 +869,7 @@ function moveSheet(r, pickedOwner){
     picker('mv_cat',   'Папка',
            catOpts(ok).concat([{ v: NEWCAT, t: '+ Новая папка…' }]), '') +
     '<div class="field" id="mv_newbox" hidden><label>Название новой папки</label>' +
-      '<input id="mv_newname" placeholder="например, 1.7 Банк" autocomplete="off"></div>' +
+      '<textarea class="ta" id="mv_newname" rows="1" placeholder="например, 1.7 Банк"></textarea></div>' +
     '<button class="btn primary" id="mv_go">Перенести</button>' +
     '<button class="btn ghost" id="mv_back">Назад</button>');
 
@@ -946,7 +946,7 @@ function newFolderSheet(ownerKey){
     '<div class="sub">' + esc(o ? o.label : '') + '</div>' +
     '<div id="nfmsg"></div>' +
     '<div class="field"><label>Название</label>' +
-      '<input id="nf_name" placeholder="например, 1.7 Банк" autocomplete="off"></div>' +
+      '<textarea class="ta" id="nf_name" rows="1" placeholder="например, 1.7 Банк"></textarea></div>' +
     '<div class="hint">Папка появится и в приложении, и на Drive — внутри папки владельца.</div>' +
     '<button class="btn primary" id="nf_go">Создать</button>' +
     '<button class="btn ghost" id="nf_no">Отмена</button>');
@@ -994,9 +994,9 @@ function ownerSheet(ownerKey){
     '<div class="sub">' + f + ' папок · ' + plural(n) + '</div>' +
     '<div id="owmsg"></div>' +
     '<div class="field"><label>Название</label>' +
-      '<input id="ow_name" value="' + esc(o.label) + '" autocomplete="off"></div>' +
+      '<textarea class="ta" id="ow_name" rows="1">' + esc(o.label) + '</textarea></div>' +
     '<div class="field"><label>Короткое имя для файлов</label>' +
-      '<input id="ow_slug" value="' + esc(o.slug || '') + '" autocomplete="off"></div>' +
+      '<textarea class="ta" id="ow_slug" rows="1">' + esc(o.slug || '') + '</textarea></div>' +
     '<div class="hint">Название поменяется везде: в реестре, в списке папок и ' +
       'в корзине. Короткое имя подставляется в начало имени файла при загрузке — ' +
       'у уже сохранённых файлов имена не меняются.</div>' +
@@ -1047,7 +1047,7 @@ function folderSheet(ownerKey, catKey, moveTo){
     '<div class="sub">' + esc(o.label) + ' · ' + plural(n) + '</div>' +
     '<div id="fdmsg"></div>' +
     '<div class="field"><label>Название папки</label>' +
-      '<input id="fd_name" value="' + esc(c.label) + '" autocomplete="off"></div>' +
+      '<textarea class="ta" id="fd_name" rows="1">' + esc(c.label) + '</textarea></div>' +
     '<button class="btn primary" id="fd_ren">Переименовать</button>' +
     '<div class="hint">Папка переименуется и на Drive, и во всех записях реестра.</div>' +
     '<button class="btn ghost" id="fd_zip">Скачать папку</button>' +
@@ -1469,9 +1469,60 @@ function fail(msg){
     '<button class="btn ghost" onclick="resetAdd()">Назад</button>';
 }
 
+/* Однострочное поле в телефоне вмещает символов тридцать, а
+   «Aufenthaltstitel (Elektronischer Aufenthaltstitel)» или полное
+   имя ведомства — втрое больше. В input остаток уезжает за край, и
+   чтобы прочитать значение перед сохранением, его надо прокручивать
+   внутри поля. Поэтому текстовые поля — textarea, которая растёт
+   под содержимое; перенос строки в них запрещён, ведёт себя она
+   по-прежнему как одна строка. */
 function field(id, label, value, type){
+  if (type === 'date') {
+    return '<div class="field"><label>' + esc(label) + '</label>' +
+      '<input id="' + id + '" type="date" value="' + esc(value || '') + '"></div>';
+  }
   return '<div class="field"><label>' + esc(label) + '</label>' +
-    '<input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(value || '') + '"></div>';
+    '<textarea class="ta" id="' + id + '" rows="1">' + esc(value || '') + '</textarea></div>';
+}
+
+function grow(t){
+  if (!t) return;
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight + 2, 260) + 'px';
+}
+function growAll(root){
+  Array.prototype.forEach.call((root || document).querySelectorAll('textarea'), grow);
+}
+
+document.addEventListener('input', function(ev){
+  var t = ev.target;
+  if (!t || t.tagName !== 'TEXTAREA') return;
+  // вставка из буфера может принести переносы — убираем
+  if (t.classList.contains('ta') && t.value.indexOf('\n') !== -1) {
+    t.value = t.value.replace(/\s*\n+\s*/g, ' ');
+  }
+  grow(t);
+});
+
+document.addEventListener('keydown', function(ev){
+  var t = ev.target;
+  if (ev.key === 'Enter' && t && t.classList && t.classList.contains('ta')) ev.preventDefault();
+});
+
+/* Поля рисуются в десятке разных мест. Вместо того чтобы помнить
+   про каждое, подхватываем их появление в документе. */
+if (window.MutationObserver) {
+  new MutationObserver(function(list){
+    for (var i = 0; i < list.length; i++) {
+      var add = list[i].addedNodes;
+      for (var j = 0; j < add.length; j++) {
+        var n = add[j];
+        if (n.nodeType !== 1) continue;
+        if (n.tagName === 'TEXTAREA') grow(n);
+        else if (n.querySelector && n.querySelector('textarea')) growAll(n);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 function picker(id, label, opts, chosen, emptyLabel){

@@ -157,6 +157,13 @@ input,textarea,select{
 }
 input:focus,textarea:focus,select:focus{border-color:var(--accent)}
 textarea{resize:vertical;min-height:92px;line-height:1.5}
+/* Поле в одну строку, но с переносом: высоту подбирает grow()
+   в app.js, поэтому ни ручки изменения размера, ни внутренней
+   прокрутки здесь быть не должно. */
+textarea.ta{
+  min-height:0;resize:none;overflow:hidden;
+  line-height:1.45;overflow-wrap:anywhere;
+}
 select{appearance:none;-webkit-appearance:none;padding-right:34px}
 .selwrap{position:relative}
 .selwrap svg{
