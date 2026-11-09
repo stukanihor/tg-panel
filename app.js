@@ -20,7 +20,7 @@ var navOwner  = null;  // раскрытый владелец в «Архиве�
 var navCat    = null;  // раскрытая папка
 
 var VIEWS = ['grid', 'list', 'compact'];
-var view  = 'list';
+var view  = 'grid';
 try { if (VIEWS.indexOf(localStorage.getItem('view')) >= 0) view = localStorage.getItem('view'); }
 catch (e) {}
 
@@ -202,6 +202,7 @@ function drawDeadlines(){
 
   el('deadlines').innerHTML = h;
   bindCards();
+  loadThumbs();
 }
 
 function statTile(key, n, label, color){
@@ -225,15 +226,15 @@ function cardHtml(r, color, n, showPath){
   if (showPath === false) {
     // Внутри папки владелец и папка и так известны — показываем организацию.
     sub = r.org || 'без организации';
-    if (r.until) sub += ' · до ' + r.until;
+    if (r.until && !r.ever) sub += ' · до ' + fmtDay(r.until);
   } else {
-    sub = r.owner + ' · ' + r.cat.replace(/^[\d.]+\s*/, '');
-    if (r.until) sub += ' · до ' + r.until;
+    sub = bare(r.owner) + ' · ' + bare(r.cat);
+    if (r.until && !r.ever) sub += ' · до ' + fmtDay(r.until);
   }
 
   return '<div class="card" data-i="' + i + '" style="animation-delay:' +
            Math.min(n * 28, 240) + 'ms">' +
-           icon(catIcon(r.cat), color || '') +
+           shotHtml(r, color) +
            '<div class="body"><div class="t">' + esc(r.name) + '</div>' +
            '<div class="s">' + esc(sub) + '</div></div>' +
            (r.fav ? '<span class="star"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg></span>' : '') +
@@ -256,6 +257,19 @@ function docsIn(ownerLabel, catLabel){
     return r.owner === ownerLabel && (catLabel === null || r.cat === catLabel);
   });
 }
+/* Названия владельцев и папок начинаются с номера — он задаёт
+   порядок на Drive, а на экране только мешает. */
+function bare(s){
+  return String(s == null ? '' : s).replace(/^\d+(?:\.\d+)*[.)]?\s+/, '');
+}
+
+/* В реестре даты лежат в машинном виде. На экране привычнее так,
+   как они написаны на самих документах. */
+function fmtDay(v){
+  var m = String(v == null ? '' : v).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? m[3] + '.' + m[2] + '.' + m[1] : String(v == null ? '' : v);
+}
+
 function plural(n){
   var t = n % 10, h = n % 100;
   var w = (t === 1 && h !== 11) ? 'документ'
@@ -303,7 +317,7 @@ function drawList(query){
   bindCards();
   bindTrash();
   bindFolders();
-  if (docs && view === 'grid') fillTiles();
+  loadThumbs();
   if (el('s-archive').classList.contains('on')) updateHead('archive');
   syncBack();
 }
@@ -366,10 +380,10 @@ function ownersHtml(){
   OWNERS.forEach(function(o, i){
     var n = docsIn(o.label, null).length;
     var f = (CATS[o.key] || []).length;
-    h += '<div class="card nav" data-o="' + esc(o.key) + '" style="animation-delay:' +
+    h += '<div class="card nav own" data-o="' + esc(o.key) + '" style="animation-delay:' +
          Math.min(i * 30, 200) + 'ms">' +
-         icon('i-folder') +
-         '<div class="body"><div class="t">' + esc(o.label) + '</div>' +
+         '<span class="av a' + (i % 4) + '">' + esc(bare(o.label).charAt(0)) + '</span>' +
+         '<div class="body"><div class="t">' + esc(bare(o.label)) + '</div>' +
          '<div class="s">' + f + ' папок · ' + plural(n) + '</div></div>' +
          '<button class="dots" data-mo="' + esc(o.key) + '" aria-label="Переименовать">' +
          '<svg viewBox="0 0 24 24"><use href="#i-dots"/></svg></button></div>';
@@ -429,9 +443,11 @@ function tilesHtml(list, showPath){
     h += '<div class="tile" data-i="' + i + '"' +
          (r.link ? ' data-link="' + esc(r.link) + '"' : '') +
          ' style="animation-delay:' + Math.min(n * 26, 240) + 'ms">' +
-         '<div class="shot">' + icon(catIcon(r.cat)) + '</div>' +
+         '<div class="shot"' + (r.link ? ' data-th="' + esc(r.link) + '"' : '') + '>' +
+           (thumbs[r.link] ? '<img src="' + thumbs[r.link] + '" alt="">' : icon(catIcon(r.cat))) +
+         '</div>' +
          '<div class="cap"><div class="t">' + esc(r.name) + '</div>' +
-         '<div class="s">' + esc(showPath ? pathOf(r) : (r.until ? 'до ' + r.until : 'бессрочный')) +
+         '<div class="s">' + esc(showPath ? pathOf(r) : (r.until && !r.ever ? 'до ' + fmtDay(r.until) : 'бессрочный')) +
          '</div></div>' + badgeHtml(r) + (r.fav ? '<span class="star"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg></span>' : '') + '</div>';
   });
   return h + '</div>';
@@ -457,36 +473,61 @@ function badgeHtml(r){
   return '';
 }
 
-/* Превью в плитках тянем по одному: каждое — отдельный запрос к Drive. */
-var tileRun = 0;
-function fillTiles(){
-  var run  = ++tileRun;
-  var todo = Array.prototype.slice.call(document.querySelectorAll('.tile[data-link]'));
+/* ── миниатюры документов ────────────────────────────────────────
+   Раньше превью тянулось по одному на плитку — экран из шести
+   собирался несколько секунд. Теперь бот отдаёт их пачкой из своего
+   кэша, а здесь они ещё и переживают переходы между экранами. */
+var thumbs = {};
+try { thumbs = JSON.parse(sessionStorage.getItem('thumbs') || '{}') || {}; }
+catch (e) { thumbs = {}; }
 
-  (function next(){
-    if (run !== tileRun) return;
-    var t = todo.shift();
-    if (!t) return;
-
-    var link = t.getAttribute('data-link');
-    if (previews[link]) { paintTile(t, previews[link]); return next(); }
-
-    callApi({ api: 'preview', init: initData(), link: link })
-      .then(function(res){
-        if (run !== tileRun) return;
-        if (res && res.ok) {
-          previews[link] = 'data:' + res.mime + ';base64,' + res.b64;
-          paintTile(t, previews[link]);
-        }
-        next();
-      })
-      .catch(function(){ if (run === tileRun) next(); });
-  })();
+function saveThumbs(){
+  try { sessionStorage.setItem('thumbs', JSON.stringify(thumbs)); } catch (e) {}
 }
 
-function paintTile(t, src){
-  var shot = t.querySelector('.shot');
-  if (shot) shot.innerHTML = '<img src="' + src + '" alt="">';
+/* Место под миниатюру. Пока её нет — значок категории: пустая серая
+   рамка на экране выглядит как поломка. */
+function shotHtml(r, color){
+  if (!r.link) return icon(catIcon(r.cat), color || '');
+  var t = thumbs[r.link];
+  return '<span class="mini" data-th="' + esc(r.link) + '">' +
+         (t ? '<img src="' + t + '" alt="">' : icon(catIcon(r.cat), color || '')) +
+         '</span>';
+}
+
+function paintThumbs(){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-th]'), function(e){
+    var t = thumbs[e.getAttribute('data-th')];
+    if (t && !e.querySelector('img')) e.innerHTML = '<img src="' + t + '" alt="">';
+  });
+}
+
+var thumbRun = 0;
+function loadThumbs(){
+  paintThumbs();
+
+  var want = [], seen = {};
+  Array.prototype.forEach.call(document.querySelectorAll('[data-th]'), function(e){
+    var l = e.getAttribute('data-th');
+    if (!l || seen[l] || thumbs[l]) return;
+    seen[l] = 1;
+    want.push(l);
+  });
+  if (!want.length) return;
+
+  var run = ++thumbRun;
+  callApi({ api: 'thumbs', init: initData(), links: want.slice(0, 24) })
+    .then(function(res){
+      if (run !== thumbRun || !res || !res.ok) return;
+      var got = res.thumbs || {}, n = 0;
+      for (var k in got) { thumbs[k] = got[k]; n++; }
+      if (n) { saveThumbs(); paintThumbs(); }
+      // За один заход бот готовит ограниченное число новых миниатюр.
+      // Если что-то осталось и в этот раз хоть что-то пришло — идём
+      // за остатком; иначе останавливаемся, чтобы не зациклиться.
+      if (res.more && n) loadThumbs();
+    })
+    .catch(function(){});
 }
 
 /* ── переключатель вида ── */
@@ -566,7 +607,7 @@ function trashHtml(){
   trash.forEach(function(t, i){
     h += '<div class="card dim">' + icon(catIcon(t.cat)) +
          '<div class="body"><div class="t">' + esc(t.name) + '</div>' +
-         '<div class="s">' + esc(t.owner + (t.gone ? ' · удалён ' + t.gone : '')) + '</div></div>' +
+         '<div class="s">' + esc(t.owner + (t.gone ? ' · удалён ' + fmtDay(t.gone) : '')) + '</div></div>' +
          '<button class="undo" data-t="' + i + '">Вернуть</button></div>';
   });
 
@@ -646,18 +687,19 @@ function openSheet(r){
   var state = bucket(r);
   var sub = state === 'over' ? 'Просрочен ' + Math.abs(r.days) + ' дн. назад'
           : state === 'soon' ? 'Истекает через ' + r.days + ' дн.'
-          : (r.until ? 'Действует до ' + r.until : 'Бессрочный');
+          : (r.until && !r.ever) ? 'Действует до ' + fmtDay(r.until) : 'Бессрочный';
 
   el('sheet').innerHTML =
     '<div class="grab"></div>' +
-    '<h3>' + esc(r.name) + '</h3>' +
-    '<div class="sub">' + esc(sub) + '</div>' +
     (r.link ? '<div class="prev" id="prev"><div class="skel tall"></div></div>' : '') +
-    kv('Кому', r.owner) +
+    '<h3>' + esc(r.name) + '</h3>' +
+    '<div class="sub"><span class="pill ' + state + '">' + esc(sub) + '</span></div>' +
+    termHtml(r) +
+    kv('Кому', bare(r.owner)) +
     kv('Папка', r.cat) +
     kv('Организация', r.org) +
     kv('Номер', r.number) +
-    kv('Выдан', r.issued) +
+    kv('Выдан', fmtDay(r.issued)) +
     (r.note ? '<div class="memo">' + esc(r.note) + '</div>' : '') +
     (r.link ? '<a class="act" href="' + esc(r.link) + '" target="_blank">' +
               '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть файл</a>' : '') +
@@ -672,6 +714,7 @@ function openSheet(r){
   el('s_edit').onclick = function(){ tap(); editSheet(r); };
   el('s_move').onclick = function(){ tap(); moveSheet(r); };
   el('s_del').onclick  = function(){ askDelete(r); };
+  bindTerm(r);
   if (r.link) loadPreview(r);
 
   el('scrim').classList.add('on');
@@ -814,6 +857,81 @@ function editSheet(r){
       });
   };
 }
+
+/* ── срок действия ───────────────────────────────────────────────
+   На сканах сплошь и рядом стоит дата, которая сроком не является:
+   заверение перевода, выдача дубликата. Модель принимает её за срок,
+   и документ без срока начинает гореть красным. Этот переключатель
+   гасит его, не стирая дату, — отметка живёт в реестре отдельной
+   колонкой, и вернуть всё обратно можно одним касанием. */
+function termHtml(r){
+  var ever = !!r.ever;
+  var seg =
+    '<div class="seg" id="s_term">' +
+      '<b class="' + (ever ? '' : 'on') + '" data-ev="0">До даты</b>' +
+      '<b class="' + (ever ? 'on' : '') + '" data-ev="1">Бессрочный</b>' +
+    '</div>';
+
+  var body;
+  if (ever) {
+    body = '<div class="tnote">В «Сроках» не появится.' +
+           (r.until ? ' Дата со скана сохранена: ' + esc(fmtDay(r.until)) + '.' : '') + '</div>';
+  } else if (r.until) {
+    body = '<div class="tdate"><b class="' +
+           (r.days !== null && r.days < 0 ? 'over' : r.days !== null && r.days <= 60 ? 'soon' : '') +
+           '">' + esc(fmtDay(r.until)) + '</b>' +
+           '<span>дата распознана со скана — переключи, если срока у документа нет</span></div>';
+  } else {
+    body = '<div class="tdate"><span>даты нет, за сроком и так никто не следит</span></div>';
+  }
+
+  return '<div class="term' + (ever ? ' off' : '') + '">' +
+         '<div class="trow"><span>Срок действия</span>' + seg + '</div>' + body + '</div>';
+}
+
+/** Сколько дней осталось до даты. Нужно, чтобы вернуть счётчик при
+    обратном переключении, не дожидаясь ответа сервера. */
+function daysLeft(until){
+  if (!until) return null;
+  var t = Date.parse(until);
+  if (isNaN(t)) return null;
+  return Math.round((t - Date.now()) / 86400000);
+}
+
+function bindTerm(r){
+  var box = el('s_term');
+  if (!box) return;
+  Array.prototype.forEach.call(box.querySelectorAll('b'), function(b){
+    b.onclick = function(){ setEver(r, b.getAttribute('data-ev') === '1'); };
+  });
+}
+
+function setEver(r, on){
+  if (!!r.ever === on) return;
+
+  var box = el('s_term');
+  if (box) box.classList.add('wait');
+  tap('medium');
+
+  callApi({ api: 'ever', init: initData(), link: r.link, name: r.name, on: on ? 1 : 0 })
+    .then(function(res){
+      if (box) box.classList.remove('wait');
+      if (!res || !res.ok) {
+        say('Не вышло: ' + (res && res.error || 'нет ответа'));
+        return;
+      }
+      r.ever = on;
+      r.days = on ? null : daysLeft(r.until);
+      if (shown === r) openSheet(r);
+      drawDeadlines();
+      drawList(el('q').value);
+    })
+    .catch(function(e){
+      if (box) box.classList.remove('wait');
+      say(e.message || String(e));
+    });
+}
+
 
 /* ── перенос документа в другую папку ── */
 function favBtn(r){

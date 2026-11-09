@@ -4,18 +4,22 @@
    ════════════════════════════════════════════════════════════════ */
 
 :root{
-  --bg:      var(--tg-theme-bg-color, #0f1620);
-  --surface: var(--tg-theme-secondary-bg-color, #182332);
-  --raised:  rgba(255,255,255,.04);
-  --fg:      var(--tg-theme-text-color, #eef2f6);
-  --muted:   var(--tg-theme-hint-color, #8396ab);
-  --accent:  var(--tg-theme-button-color, #3e8bff);
-  --onacc:   var(--tg-theme-button-text-color, #fff);
-  --line:    rgba(131,150,171,.26);
+  /* Цвета больше не берутся из темы Telegram. Оформление построено
+     вокруг превью документов на тёмном фоне: светлая тема клиента
+     превращала плитки в белые пятна на белом, а полутона подписей
+     переставали читаться. */
+  --bg:      #0d1117;
+  --surface: #161d26;
+  --raised:  rgba(255,255,255,.045);
+  --fg:      #e9eef5;
+  --muted:   #7d8c9e;
+  --accent:  #4f8cff;
+  --onacc:   #07101e;
+  --line:    #1f2935;
 
-  --red:     #ff5c5c;
-  --amber:   #f0b429;
-  --green:   #2fcc8b;
+  --red:     #ff6b5e;
+  --amber:   #f2b63c;
+  --green:   #5ac8a0;
 
   --r-xl: 22px;
   --r-lg: 16px;
@@ -68,7 +72,7 @@ body.sheet-open #scroll{overflow:hidden}
 /* ── шапка экрана ── */
 .head{flex:0 0 auto;padding:18px 20px 8px}
 .head h1{
-  margin:0;font-size:27px;line-height:1.15;font-weight:700;letter-spacing:-.022em;
+  margin:0;font-size:30px;line-height:1.12;font-weight:700;letter-spacing:-.025em;
 }
 .head p{margin:5px 0 0;color:var(--muted);font-size:14px}
 
@@ -81,7 +85,7 @@ body.sheet-open #scroll{overflow:hidden}
 .stats{display:flex;gap:8px;margin:4px 0 20px}
 .stat{
   flex:1;background:var(--surface);border-radius:var(--r-lg);
-  padding:13px 12px;text-align:center;border:1px solid transparent;
+  padding:13px 13px;text-align:left;border:1px solid var(--line);
   cursor:pointer;transition:transform .16s var(--ease),border-color .16s;
 }
 .stat:active{transform:scale(.97)}
@@ -90,7 +94,7 @@ body.sheet-open #scroll{overflow:hidden}
   font-size:25px;font-weight:700;line-height:1.1;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums;
 }
-.stat .l{font-size:11px;color:var(--muted);margin-top:3px;letter-spacing:.02em}
+.stat .l{font-size:10.5px;color:var(--muted);margin-top:5px;letter-spacing:.02em}
 .stat.red{color:var(--red)}
 .stat.amber{color:var(--amber)}
 .stat.green{color:var(--green)}
@@ -104,9 +108,9 @@ body.sheet-open #scroll{overflow:hidden}
 }
 
 .card{
-  display:flex;align-items:center;gap:13px;
-  background:var(--surface);border-radius:var(--r-lg);
-  padding:13px 14px;margin-bottom:8px;cursor:pointer;
+  display:flex;align-items:center;gap:12px;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:11px 13px;margin-bottom:8px;cursor:pointer;
   transition:transform .16s var(--ease),background .16s;
   animation:rise .3s var(--ease) backwards;
 }
@@ -365,13 +369,13 @@ nav .dot{
 
 /* ── превью первой страницы в карточке ── */
 .prev{
-  margin:0 0 16px;border-radius:var(--r-lg);overflow:hidden;
-  background:var(--surface);border:1px solid var(--line);
+  margin:0 -20px 14px;overflow:hidden;
+  background:var(--surface);
   min-height:120px;display:flex;align-items:center;justify-content:center;
 }
 .prev a{display:block;width:100%;line-height:0}
 .prev img{
-  width:100%;max-height:340px;object-fit:cover;object-position:top;
+  width:100%;max-height:300px;object-fit:cover;object-position:top;
   display:block;animation:fade .3s var(--ease);
 }
 .prev .skel.tall{height:200px;margin:0;border-radius:0;width:100%}
@@ -582,3 +586,73 @@ nav .dot{
   box-shadow:0 10px 26px rgba(0,0,0,.35);
 }
 .toast.on{transform:translate(-50%,0);opacity:1}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Превью, владельцы и срок действия
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Слева в строке — уменьшенная копия документа. Пропорции листа, а
+   не квадрат: по ним бумага узнаётся раньше, чем прочитано название.
+   Пока миниатюры нет, внутри лежит обычный значок категории, и
+   размеры берёт он. */
+.mini{
+  flex:0 0 36px;height:46px;border-radius:8px;overflow:hidden;
+  display:grid;place-items:center;background:var(--raised);
+}
+.mini img{width:100%;height:100%;object-fit:cover;object-position:top;
+  display:block;animation:fade .25s var(--ease)}
+.mini .ic{flex:none;width:36px;height:46px;border-radius:0}
+
+/* Буква вместо значка папки: трёх владельцев глаз различает по цвету
+   быстрее, чем по подписи. */
+.own .av{
+  flex:0 0 38px;height:38px;border-radius:12px;
+  display:grid;place-items:center;
+  font-size:16px;font-weight:700;color:#0b1017;
+}
+.av.a0{background:var(--accent)}
+.av.a1{background:#c79bff}
+.av.a2{background:var(--green)}
+.av.a3{background:var(--amber)}
+
+/* Бейдж срока поверх превью в плитке */
+.tile .badge{border-radius:999px;background:rgba(10,14,20,.72)}
+.tile .badge.red{background:var(--red);color:#2b0f0c}
+.tile .badge.amber{background:var(--amber);color:#2d2206}
+
+/* Состояние документа в его карточке */
+.pill{
+  display:inline-block;font-size:12px;font-weight:650;
+  padding:5px 11px;border-radius:999px;background:var(--raised);color:var(--muted);
+}
+.pill.over{background:var(--red);color:#2b0f0c}
+.pill.soon{background:var(--amber);color:#2d2206}
+.pill.ok{background:rgba(90,200,160,.16);color:var(--green)}
+
+/* ── срок действия ── */
+.term{
+  background:#141b24;border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:12px 13px;margin:14px 0;
+}
+.term.off{background:#121d19;border-color:#24402f}
+.trow{display:flex;align-items:center;gap:12px}
+.trow > span{flex:1;font-size:12.5px;color:var(--muted)}
+.seg{
+  display:flex;gap:2px;flex:none;padding:3px;
+  background:#0e151d;border:1px solid var(--line);border-radius:10px;
+}
+.seg.wait{opacity:.5;pointer-events:none}
+.seg b{
+  font-size:11.5px;font-weight:650;color:var(--muted);
+  padding:6px 11px;border-radius:7px;cursor:pointer;
+  transition:background .16s,color .16s;
+}
+.seg b.on{background:var(--accent);color:var(--onacc)}
+.term.off .seg b.on{background:#2fae7e;color:#04150e}
+.tdate{display:flex;align-items:baseline;gap:9px;margin-top:10px;flex-wrap:wrap}
+.tdate b{font-size:15px;font-variant-numeric:tabular-nums}
+.tdate b.over{color:var(--red)}
+.tdate b.soon{color:var(--amber)}
+.tdate span{flex:1;min-width:150px;font-size:11.5px;color:var(--muted);line-height:1.4}
+.tnote{margin-top:10px;font-size:12px;color:#8fcbb0;line-height:1.45}
