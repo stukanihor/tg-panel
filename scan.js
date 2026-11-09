@@ -855,6 +855,122 @@ function scanEditor(cv, quad, title){
 }
 
 
+/* ═══════════════════ ПОКАЗ РЕЗУЛЬТАТА ══════════════════════════ */
+
+/* Между правкой углов и отправкой показываем, что получилось.
+   Без этого ошибку видно только в архиве, когда документ уже
+   сохранён и переделывать его дороже. Лист можно приблизить
+   касанием: мелкий шрифт в сносках — первое, что страдает от
+   неудачной обрезки. */
+function scanPreview(out){
+  return new Promise(function(resolve){
+    var box = document.createElement('div');
+    box.className = 'crop';
+    box.innerHTML =
+      '<div class="crophead"><b>Так пойдёт?</b>' +
+      '<i>Проверь, всё ли попало в кадр и читается ли мелкий шрифт. ' +
+      'Коснись листа, чтобы приблизить.</i></div>' +
+      '<div class="cropbox" id="shotbox"></div>' +
+      '<div class="cropfoot">' +
+        '<button class="btn primary" id="sh_go">Годится</button>' +
+        '<button class="btn ghost" id="sh_back">Поправить углы</button>' +
+      '</div>';
+    document.body.appendChild(box);
+
+    var host = box.querySelector('#shotbox');
+    var cnv  = document.createElement('canvas');
+    host.appendChild(cnv);
+    var cx = cnv.getContext('2d');
+
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    var vw = 0, vh = 0, z = 1, px = 0, py = 0;
+
+    function clamp(){
+      var w = vw * z, h = vh * z;
+      px = w <= vw ? (vw - w) / 2 : Math.max(vw - w, Math.min(0, px));
+      py = h <= vh ? (vh - h) / 2 : Math.max(vh - h, Math.min(0, py));
+    }
+
+    function draw(){
+      clamp();
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cx.clearRect(0, 0, vw, vh);
+      cx.save();
+      cx.translate(px, py);
+      cx.scale(z, z);
+      cx.drawImage(out, 0, 0, vw, vh);
+      cx.restore();
+    }
+
+    function layout(){
+      var bw = host.clientWidth, bh = host.clientHeight;
+      if (!bw || !bh) return;
+      var sc = Math.min(bw / out.width, bh / out.height);
+      vw = Math.round(out.width * sc);
+      vh = Math.round(out.height * sc);
+      cnv.width  = Math.round(vw * dpr);
+      cnv.height = Math.round(vh * dpr);
+      cnv.style.width  = vw + 'px';
+      cnv.style.height = vh + 'px';
+      cnv.style.left = Math.round((bw - vw) / 2) + 'px';
+      cnv.style.top  = Math.round((bh - vh) / 2) + 'px';
+      z = 1; px = 0; py = 0;
+      draw();
+    }
+
+    var down = null, moved = 0;
+
+    host.addEventListener('pointerdown', function(ev){
+      var r = cnv.getBoundingClientRect();
+      down = { x: ev.clientX, y: ev.clientY, px: px, py: py,
+               cx: ev.clientX - r.left, cy: ev.clientY - r.top };
+      moved = 0;
+      host.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+
+    host.addEventListener('pointermove', function(ev){
+      if (!down || z === 1) return;
+      var dx = ev.clientX - down.x, dy = ev.clientY - down.y;
+      moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
+      px = down.px + dx; py = down.py + dy;
+      draw();
+      ev.preventDefault();
+    });
+
+    function up(){
+      if (!down) return;
+      // короткое касание без протяжки — приблизить или вернуть обратно
+      if (moved < 8) {
+        tap();
+        if (z === 1) {
+          z = 2.6;
+          px = -(down.cx * z - down.cx);
+          py = -(down.cy * z - down.cy);
+        } else {
+          z = 1; px = 0; py = 0;
+        }
+        draw();
+      }
+      down = null;
+    }
+    host.addEventListener('pointerup', up);
+    host.addEventListener('pointercancel', up);
+
+    function close(val){
+      window.removeEventListener('resize', layout);
+      box.remove();
+      resolve(val);
+    }
+    box.querySelector('#sh_go').onclick   = function(){ tap('medium'); close('ok'); };
+    box.querySelector('#sh_back').onclick = function(){ tap(); close('back'); };
+
+    window.addEventListener('resize', layout);
+    requestAnimationFrame(function(){ requestAnimationFrame(layout); });
+  });
+}
+
+
 /* ═══════════════════ СБОРКА ════════════════════════════════════ */
 
 function scanCanvas(img, max){
@@ -871,6 +987,19 @@ function scanCanvas(img, max){
   return cv;
 }
 
+/* Обрезка (если есть по чему) плюс свет и контраст. */
+function scanRender(cv, quad){
+  var work = quad ? scanWarp(cv, quad) : null;
+  // без обрезки — просто ужимаем до рабочего размера
+  if (!work) work = scanCanvas(cv, SCAN_MAX);
+
+  var wx = work.getContext('2d', { willReadFrequently: true });
+  var im = wx.getImageData(0, 0, work.width, work.height);
+  scanFlatten(im, work.width, work.height);
+  wx.putImageData(im, 0, 0);
+  return work;
+}
+
 function scanify(file, interactive, title){
   return scanBitmap(file).then(function(img){
     var w0 = img.width || img.naturalWidth;
@@ -885,28 +1014,24 @@ function scanify(file, interactive, title){
     var hit  = scanFind(cv);
     var quad = hit ? hit.quad : null;
 
-    // В пачке режем только по уверенному распознаванию: спросить
-    // про каждый из десяти файлов нельзя, а срезать угол документа
-    // молча — хуже, чем оставить кадр целиком.
-    var pick = interactive
-      ? scanEditor(cv, quad, title)
-      : Promise.resolve(hit && hit.sure ? quad : null);
+    // В пачке спрашивать про каждый из десяти файлов нельзя, поэтому
+    // там режем только по уверенному распознаванию: срезать угол
+    // документа молча — хуже, чем оставить кадр целиком.
+    if (!interactive) {
+      return scanRender(cv, hit && hit.sure ? quad : null)
+             .toDataURL('image/jpeg', SCAN_Q);
+    }
 
-    return pick.then(function(q){
-      var work = null;
-      if (q) work = scanWarp(cv, q);
-      if (!work) {
-        // без обрезки — просто ужимаем до рабочего размера
-        work = scanCanvas(cv, SCAN_MAX);
-      }
-
-      var wx = work.getContext('2d', { willReadFrequently: true });
-      var im = wx.getImageData(0, 0, work.width, work.height);
-      scanFlatten(im, work.width, work.height);
-      wx.putImageData(im, 0, 0);
-
-      return work.toDataURL('image/jpeg', SCAN_Q);
-    });
+    // Углы → показ результата → либо дальше, либо назад к углам.
+    return (function round(q){
+      return scanEditor(cv, q, title).then(function(chosen){
+        var out = scanRender(cv, chosen);
+        return scanPreview(out).then(function(ans){
+          if (ans === 'ok') return out.toDataURL('image/jpeg', SCAN_Q);
+          return round(chosen || q);
+        });
+      });
+    })(quad);
   });
 }
 
