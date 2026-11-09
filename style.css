@@ -697,3 +697,7 @@ h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12px}
 .act2.on{border-color:var(--amber);color:var(--amber)}
 .act2.on svg{fill:currentColor;stroke:none}
 .act2.on span{color:var(--amber)}
+
+/* Номер сборки — чтобы при разговоре о «не обновилось» было что
+   назвать, а не гадать, какая версия доехала до телефона. */
+.build{margin-top:26px;text-align:center;font-size:10.5px;color:#4a5767;letter-spacing:.06em}
