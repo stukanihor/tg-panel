@@ -92,18 +92,47 @@ window.addEventListener('resize', fitViewport);
 window.addEventListener('orientationchange', function(){ setTimeout(fitViewport, 250); });
 
 /* ── связь с Apps Script ── */
+/* Обычный путь — POST. Во встроенном браузере Telegram на iPhone он
+   иногда не проходит, и тогда работает запасной, через адресную
+   строку. Раз споткнувшись, больше не пробуем: иначе каждый запрос
+   начинался бы с заведомо неудачной попытки. */
+var jsonpOnly = false;
+
 function callApi(params){
+  if (jsonpOnly && !params.files) return jsonp(toQuery(params));
+
   return fetch(API, { method: 'POST', body: JSON.stringify(params) })
     .then(function(r){ return r.json(); })
     .catch(function(){
-      // Запасной путь для лёгких запросов: файл так не отправить.
+      // Снимок в адресную строку не поместится — его только POST.
       if (params.files) throw new Error('не удалось отправить файл на сервер');
-      var qs = Object.keys(params)
-        .filter(function(k){ return typeof params[k] !== 'object'; })
-        .map(function(k){ return k + '=' + encodeURIComponent(params[k]); })
-        .join('&');
-      return jsonp(qs);
+      jsonpOnly = true;
+      markRoute();
+      return jsonp(toQuery(params));
     });
+}
+
+/* Списки и объекты уходят строкой JSON — на той стороне их разберут
+   обратно. Раньше они просто выбрасывались, и запрос приходил без
+   половины своих данных: так, например, пропадал список ссылок на
+   миниатюры, и сервер отвечал «неизвестный запрос». */
+/* Дописываем к номеру сборки, каким путём приложение разговаривает
+   с ботом. Со стороны это не видно никак, а разница в поведении
+   огромная — проще один раз показать, чем потом гадать. */
+function markRoute(){
+  var b = document.querySelector('.build');
+  if (b && b.textContent.indexOf('·') === -1) b.textContent += ' · запасной путь';
+}
+
+function toQuery(params){
+  var qs = Object.keys(params).map(function(k){
+    var v = params[k];
+    if (v && typeof v === 'object') v = JSON.stringify(v);
+    return k + '=' + encodeURIComponent(v);
+  }).join('&');
+
+  if (qs.length > 7000) throw new Error('запрос слишком длинный для запасного пути');
+  return qs;
 }
 
 var seq = 0;
