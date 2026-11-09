@@ -560,7 +560,21 @@ function paintThumbs(){
    пользователь ждал вдвое дольше.
      asking — что уже спрошено и едет;
      отложенный запуск — склеиваем все просьбы одного кадра в одну. */
-var asking = {}, thumbWait = 0;
+var asking = {}, thumbWait = 0, thumbTold = false;
+
+/* Миниатюры — единственное, что приложение берёт у бота отдельным
+   методом, появившимся позже остальных. Если развёртывание не
+   обновили, метод не найден, и плитки молча остаются со значками.
+   Один раз за сеанс говорим вслух, в чём дело: догадаться по виду
+   экрана невозможно. */
+function thumbsFailed(err){
+  if (thumbTold) return;
+  thumbTold = true;
+  var why = String(err || '');
+  toast(/неизвестн/i.test(why)
+    ? 'Превью не приходят: у бота старое развёртывание. Нужна «Новая версия».'
+    : 'Превью не пришли: ' + (why || 'нет ответа'), 5200);
+}
 
 function loadThumbs(){
   paintThumbs();
@@ -584,7 +598,7 @@ function askThumbs(){
   callApi({ api: 'thumbs', init: initData(), links: want })
     .then(function(res){
       want.forEach(function(l){ delete asking[l]; });
-      if (!res || !res.ok) return;
+      if (!res || !res.ok) return thumbsFailed(res && res.error);
       var got = res.thumbs || {}, n = 0;
       for (var k in got) { thumbs[k] = got[k]; n++; }
       if (n) { saveThumbs(); paintThumbs(); }
