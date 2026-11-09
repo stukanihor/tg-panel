@@ -478,7 +478,7 @@ function scanFind(cv){
 }
 
 
-/* ═══════════════════ ВЫПРЯМЛЕНИЕ ═══════════════════════════════ */
+/* ═══════════════════ ВЫПРЯМЛЕНИЕ ══════════════════════════════ */
 
 /* Гомография по четырём парам точек: решаем систему 8×8 методом
    Гаусса. Считаем обратное преобразование — из готового листа в
@@ -677,7 +677,7 @@ function scanFlatten(im, w, h){
 }
 
 
-/* ═══════════════════ ЭКРАН ПРАВКИ УГЛОВ ════════════════════════ */
+/* ═══════════════════ ЭКРАН ПРАВКИ УГЛОВ ═══════════════════════ */
 
 /* Показывает снимок с четырьмя точками. Возвращает обещание:
    массив из четырёх точек — резать по ним, null — не резать. */
@@ -711,28 +711,71 @@ function scanEditor(cv, quad, title){
     host.appendChild(cnv);
     var cx = cnv.getContext('2d');
 
-    var sc = 1, offx = 0, offy = 0;
+    var sc = 1, vw = 0, vh = 0, drag = -1;
+    // Выше тройного множителя разницы не видно, а памяти холст ест
+    // вчетверо больше — на телефоне это заметно.
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
 
     function layout(){
       var bw = host.clientWidth, bh = host.clientHeight;
       if (!bw || !bh) return;
+
       sc = Math.min(bw / cv.width, bh / cv.height);
-      var w = Math.round(cv.width * sc), h = Math.round(cv.height * sc);
-      offx = Math.round((bw - w) / 2); offy = Math.round((bh - h) / 2);
-      cnv.width = w; cnv.height = h;
-      cnv.style.left = offx + 'px';
-      cnv.style.top  = offy + 'px';
+      vw = Math.round(cv.width * sc);
+      vh = Math.round(cv.height * sc);
+
+      // Холст рисуем в пикселях экрана, а не в CSS-пикселях: иначе
+      // на телефоне превью мылится и не разглядеть, по чему резать.
+      cnv.width  = Math.round(vw * dpr);
+      cnv.height = Math.round(vh * dpr);
+      cnv.style.width  = vw + 'px';
+      cnv.style.height = vh + 'px';
+      cnv.style.left = Math.round((bw - vw) / 2) + 'px';
+      cnv.style.top  = Math.round((bh - vh) / 2) + 'px';
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
       draw();
     }
 
+    /* Лупа под пальцем: угол листа почти всегда оказывается под
+       подушечкой, и без увеличения точку ставишь вслепую. */
+    function loupe(i){
+      var R = 56, Z = 3.2;
+      var px = quad[i][0] * sc, py = quad[i][1] * sc;
+
+      var lx = px > vw / 2 ? 14 + R : vw - 14 - R;
+      var ly = 14 + R;
+      if (Math.abs(px - lx) < R + 26 && Math.abs(py - ly) < R + 26) ly = vh - 14 - R;
+
+      var side = (2 * R) / (sc * Z);   // столько пикселей исходника влезает в кружок
+
+      cx.save();
+      cx.beginPath(); cx.arc(lx, ly, R, 0, 7); cx.closePath();
+      cx.fillStyle = '#0b0f14'; cx.fill();
+      cx.clip();
+      cx.drawImage(cv,
+        quad[i][0] - side / 2, quad[i][1] - side / 2, side, side,
+        lx - R, ly - R, R * 2, R * 2);
+      cx.strokeStyle = 'rgba(62,139,255,.95)';
+      cx.lineWidth = 1.5;
+      cx.beginPath();
+      cx.moveTo(lx - 15, ly); cx.lineTo(lx + 15, ly);
+      cx.moveTo(lx, ly - 15); cx.lineTo(lx, ly + 15);
+      cx.stroke();
+      cx.restore();
+
+      cx.beginPath(); cx.arc(lx, ly, R, 0, 7);
+      cx.strokeStyle = '#fff'; cx.lineWidth = 2; cx.stroke();
+    }
+
     function draw(){
-      cx.clearRect(0, 0, cnv.width, cnv.height);
-      cx.drawImage(cv, 0, 0, cnv.width, cnv.height);
+      cx.clearRect(0, 0, vw, vh);
+      cx.drawImage(cv, 0, 0, vw, vh);
 
       // затемняем всё вне выделения
       cx.save();
       cx.beginPath();
-      cx.rect(0, 0, cnv.width, cnv.height);
+      cx.rect(0, 0, vw, vh);
       cx.moveTo(quad[0][0] * sc, quad[0][1] * sc);
       for (var i = 3; i >= 0; i--) cx.lineTo(quad[i][0] * sc, quad[i][1] * sc);
       cx.closePath();
@@ -755,9 +798,9 @@ function scanEditor(cv, quad, title){
         cx.beginPath(); cx.arc(px, py, 11, 0, 7);
         cx.strokeStyle = '#3e8bff'; cx.lineWidth = 3; cx.stroke();
       }
-    }
 
-    var drag = -1;
+      if (drag >= 0) loupe(drag);
+    }
 
     function at(ev){
       var r = cnv.getBoundingClientRect();
@@ -776,6 +819,7 @@ function scanEditor(cv, quad, title){
       drag = best;
       host.setPointerCapture(ev.pointerId);
       tap();
+      draw();
       ev.preventDefault();
     });
 
@@ -788,7 +832,7 @@ function scanEditor(cv, quad, title){
       ev.preventDefault();
     });
 
-    function up(){ drag = -1; }
+    function up(){ if (drag >= 0) { drag = -1; draw(); } }
     host.addEventListener('pointerup', up);
     host.addEventListener('pointercancel', up);
 
