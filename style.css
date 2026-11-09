@@ -51,6 +51,17 @@ body{
   flex:1 1 auto;min-height:0;
   overflow-y:auto;-webkit-overflow-scrolling:touch;
   overscroll-behavior:contain;
+  /* Без этого браузер делает горизонтальную прокрутку доступной
+     заодно с вертикальной, и любое слишком широкое слово позволяет
+     таскать весь экран вбок. */
+  overflow-x:hidden;
+}
+
+/* Немецкое составное слово или ссылка без пробелов не переносятся
+   и растягивают блок шире экрана. Разрешаем рвать такие слова в
+   любом месте — иначе текст уезжает за край. */
+.notice,.memo,.hint,.state,.binnote,.sub,.card .t,.kv .v,.swtext span{
+  overflow-wrap:anywhere;
 }
 body.sheet-open #scroll{overflow:hidden}
 
@@ -301,7 +312,7 @@ select{appearance:none;-webkit-appearance:none;padding-right:34px}
 }
 .scrim.on{opacity:1;pointer-events:auto}
 .sheet{
-  background:var(--bg);width:100%;overflow-y:auto;
+  background:var(--bg);width:100%;overflow-y:auto;overflow-x:hidden;
   max-height:calc(var(--vh, 100vh) - 44px);
   border-radius:var(--r-xl) var(--r-xl) 0 0;
   padding:10px 20px calc(26px + env(safe-area-inset-bottom));
