@@ -607,11 +607,14 @@ nav .dot{
 
 /* Буква вместо значка папки: трёх владельцев глаз различает по цвету
    быстрее, чем по подписи. */
-.own .av{
-  flex:0 0 38px;height:38px;border-radius:12px;
-  display:grid;place-items:center;
-  font-size:16px;font-weight:700;color:#0b1017;
+/* Общие свойства буквы держим отдельно от размеров: аватарка
+   встречается и в строке владельца, и в заголовке группы, а
+   выравнивание с цветом у них одинаковые. */
+.av{
+  display:grid;place-items:center;line-height:1;
+  font-weight:700;color:#0b1017;overflow:hidden;
 }
+.own .av{flex:0 0 38px;height:38px;border-radius:12px;font-size:16px}
 .av.a0{background:var(--accent)}
 .av.a1{background:#c79bff}
 .av.a2{background:var(--green)}
@@ -667,7 +670,7 @@ h2.owh{
   display:flex;align-items:center;gap:9px;margin:0 0 10px 0;
   font-size:13.5px;font-weight:650;letter-spacing:0;text-transform:none;color:var(--fg);
 }
-h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12px}
+h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12.5px}
 
 /* Значок в верхней строке списка — выгрузка архива */
 .iconbtn{
