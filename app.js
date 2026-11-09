@@ -303,10 +303,9 @@ function drawList(query){
     docs = true;
   }
 
-  el('views').hidden = !docs;
-  el('list').innerHTML = h +
-    ((q || navOwner) ? '' :
-      '<button class="btn ghost" id="zipAll">Скачать архив</button>' + trashHtml());
+  el('views').hidden  = !docs;
+  el('zipTop').hidden = !!(q || navOwner);
+  el('list').innerHTML = h + ((q || navOwner) ? '' : trashHtml());
 
   bindCards();
   bindTrash();
@@ -576,6 +575,10 @@ Array.prototype.forEach.call(document.querySelectorAll('#views button'), functio
 });
 syncViews();
 
+/* Выгрузка всего архива живёт в верхней строке значком: кнопкой во
+   всю ширину внизу списка она попадалась на глаза чаще, чем нужна. */
+el('zipTop').onclick = function(){ tap(); zipSheet('', ''); };
+
 /* ── переходы по папкам и меню папки ── */
 function bindFolders(){
   Array.prototype.forEach.call(document.querySelectorAll('.card[data-o]'), function(c){
@@ -632,8 +635,6 @@ function bindFolders(){
   var add = el('newFolder');
   if (add) add.onclick = function(){ tap(); newFolderSheet(navOwner); };
 
-  var zip = el('zipAll');
-  if (zip) zip.onclick = function(){ tap(); zipSheet('', ''); };
 }
 
 /* ── корзина: свёрнутый список внизу «Архива» ── */
@@ -736,6 +737,7 @@ function openSheet(r){
     (r.link ? '<div class="prev" id="prev"><div class="skel tall"></div></div>' : '') +
     '<h3>' + esc(r.name) + '</h3>' +
     '<div class="sub"><span class="pill ' + state + '">' + esc(sub) + '</span></div>' +
+    actsHtml(r) +
     termHtml(r) +
     kv('Кому', bare(r.owner)) +
     kv('Папка', r.cat) +
@@ -743,12 +745,6 @@ function openSheet(r){
     kv('Номер', r.number) +
     kv('Выдан', fmtDay(r.issued)) +
     (r.note ? '<div class="memo">' + esc(r.note) + '</div>' : '') +
-    (r.link ? '<a class="act" href="' + esc(r.link) + '" target="_blank">' +
-              '<svg viewBox="0 0 24 24"><use href="#i-link"/></svg>Открыть файл</a>' : '') +
-    favBtn(r) +
-    (r.link ? '<button class="btn ghost" id="s_share">Поделиться</button>' : '') +
-    '<button class="btn ghost" id="s_edit">Изменить</button>' +
-    '<button class="btn ghost" id="s_move">Переместить</button>' +
     '<button class="btn danger" id="s_del">Удалить из архива</button>';
 
   if (r.link) el('s_share').onclick = function(){ tap(); drawShare(r); };
@@ -976,10 +972,25 @@ function setEver(r, on){
 
 
 /* ── перенос документа в другую папку ── */
-function favBtn(r){
-  return '<button class="btn ghost favbtn' + (r.fav ? ' on' : '') + '" id="s_fav">' +
-         '<svg viewBox="0 0 24 24"><use href="#i-star"/></svg>' +
-         '<span>' + (r.fav ? 'В избранном' : 'В избранное') + '</span></button>';
+/* Действия над документом — рядом значков под заголовком, а не
+   столбиком кнопок внизу: до них не нужно долистывать, и карточка
+   начинается с самого документа, а не со списка команд.
+   «Удалить» в этот ряд не берём: единственное необратимое действие
+   не должно стоять вплотную к «Изменить». */
+function actsHtml(r){
+  function b(tag, id, ic, label, on, href){
+    return '<' + tag + ' class="act2' + (on ? ' on' : '') + '" id="' + id + '"' +
+           (href ? ' href="' + esc(href) + '" target="_blank"' : '') + '>' +
+           '<svg viewBox="0 0 24 24"><use href="#' + ic + '"/></svg>' +
+           '<span>' + esc(label) + '</span></' + tag + '>';
+  }
+  return '<div class="acts">' +
+    (r.link ? b('a', 's_open', 'i-link', 'Открыть', false, r.link) : '') +
+    b('button', 's_fav', 'i-star', 'Избранное', r.fav) +
+    (r.link ? b('button', 's_share', 'i-share', 'Поделиться') : '') +
+    b('button', 's_edit', 'i-edit', 'Изменить') +
+    b('button', 's_move', 'i-move', 'Перенести') +
+  '</div>';
 }
 
 function toggleFav(r){
@@ -997,7 +1008,6 @@ function toggleFav(r){
       }
       r.fav = want;
       b.classList.toggle('on', want);
-      b.querySelector('span').textContent = want ? 'В избранном' : 'В избранное';
       if (want) fx('star', 'В избранном');
       drawList(el('q').value);
       drawDeadlines();

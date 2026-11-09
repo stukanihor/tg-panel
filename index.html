@@ -72,6 +72,16 @@
       <path d="m5 12.5 4.5 4.5L19 7.5"/></g>
     <g id="i-star" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
       <path d="m12 3.9 2.55 5.17 5.7.83-4.12 4.02.97 5.68L12 16.92l-5.1 2.68.97-5.68L3.75 9.9l5.7-.83z"/></g>
+    <g id="i-dl" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 4v10"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 19h14"/></g>
+    <g id="i-share" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 15V4"/><path d="m8 7.5 4-3.5 4 3.5"/>
+      <path d="M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/></g>
+    <g id="i-edit" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="m14.5 6.5 3 3"/></g>
+    <g id="i-move" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <path d="M10 13h6"/><path d="m13.5 10.5 2.5 2.5-2.5 2.5"/></g>
     <g id="i-bank" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4 10h16M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18M12 3.5 20 8H4z"/></g>
   </defs>
@@ -96,6 +106,8 @@
   </div>
   <div class="bar">
     <div class="crumbs" id="crumbs"></div>
+    <button class="iconbtn" id="zipTop" hidden aria-label="Скачать архив">
+      <svg viewBox="0 0 24 24"><use href="#i-dl"/></svg></button>
     <div class="views" id="views" hidden>
       <button data-v="grid"    aria-label="Плитка"><svg viewBox="0 0 24 24"><use href="#i-grid"/></svg></button>
       <button data-v="list"    aria-label="Список"><svg viewBox="0 0 24 24"><use href="#i-rows"/></svg></button>
