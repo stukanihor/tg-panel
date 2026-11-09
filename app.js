@@ -263,12 +263,15 @@ function fmtDay(v){
   return m ? m[3] + '.' + m[2] + '.' + m[1] : String(v == null ? '' : v);
 }
 
-function plural(n){
+/* Русский счёт: 1 папка, 2 папки, 5 папок. */
+function plural2(n, one, few, many){
   var t = n % 10, h = n % 100;
-  var w = (t === 1 && h !== 11) ? 'документ'
-        : (t >= 2 && t <= 4 && (h < 12 || h > 14)) ? 'документа' : 'документов';
+  var w = (t === 1 && h !== 11) ? one
+        : (t >= 2 && t <= 4 && (h < 12 || h > 14)) ? few : many;
   return n + ' ' + w;
 }
+function plural(n){ return plural2(n, 'документ', 'документа', 'документов'); }
+function folders(n){ return plural2(n, 'папка', 'папки', 'папок'); }
 
 function drawList(query){
   var q = String(query || '').trim().toLowerCase();
@@ -404,7 +407,7 @@ function ownersHtml(){
          Math.min(i * 30, 200) + 'ms">' +
          '<span class="av a' + (i % 4) + '">' + esc(bare(o.label).charAt(0)) + '</span>' +
          '<div class="body"><div class="t">' + esc(bare(o.label)) + '</div>' +
-         '<div class="s">' + f + ' папок · ' + plural(n) + '</div></div>' +
+         '<div class="s">' + folders(f) + ' · ' + plural(n) + '</div></div>' +
          '<button class="dots" data-mo="' + esc(o.key) + '" aria-label="Переименовать">' +
          '<svg viewBox="0 0 24 24"><use href="#i-dots"/></svg></button></div>';
   });
@@ -505,12 +508,33 @@ function badgeHtml(r){
    Раньше превью тянулось по одному на плитку — экран из шести
    собирался несколько секунд. Теперь бот отдаёт их пачкой из своего
    кэша, а здесь они ещё и переживают переходы между экранами. */
+var THUMB_CAP = 2500000;   // примерно 2,5 МБ — предел хранилища браузера с запасом
+
 var thumbs = {};
-try { thumbs = JSON.parse(sessionStorage.getItem('thumbs') || '{}') || {}; }
+try { thumbs = JSON.parse(localStorage.getItem('thumbs') || '{}') || {}; }
 catch (e) { thumbs = {}; }
 
+/* Храним между запусками, а не только на время сеанса: архив меняется
+   редко, и при каждом открытии заново выпрашивать те же картинки —
+   лишняя секунда ожидания на ровном месте. Если накопилось больше
+   предела, выбрасываем самые старые: порядок ключей в объекте —
+   порядок их появления. */
 function saveThumbs(){
-  try { sessionStorage.setItem('thumbs', JSON.stringify(thumbs)); } catch (e) {}
+  try {
+    var data = JSON.stringify(thumbs);
+    while (data.length > THUMB_CAP) {
+      var first = null;
+      for (var k in thumbs) { first = k; break; }
+      if (!first) break;
+      delete thumbs[first];
+      data = JSON.stringify(thumbs);
+    }
+    localStorage.setItem('thumbs', data);
+  } catch (e) {
+    // Хранилище переполнено или запрещено — не беда, просто живём
+    // без кэша между запусками.
+    try { localStorage.removeItem('thumbs'); } catch (e2) {}
+  }
 }
 
 /* Место под миниатюру. Пока её нет — значок категории: пустая серая
@@ -530,23 +554,37 @@ function paintThumbs(){
   });
 }
 
-var thumbRun = 0;
+/* Экраны рисуются по очереди — сначала «Сроки», сразу следом «Архив»,
+   — и каждый просит миниатюры. Без этих двух предосторожностей
+   получалось два одинаковых запроса подряд: один уходил впустую, а
+   пользователь ждал вдвое дольше.
+     asking — что уже спрошено и едет;
+     отложенный запуск — склеиваем все просьбы одного кадра в одну. */
+var asking = {}, thumbWait = 0;
+
 function loadThumbs(){
   paintThumbs();
+  if (thumbWait) return;
+  thumbWait = setTimeout(function(){ thumbWait = 0; askThumbs(); }, 0);
+}
 
+function askThumbs(){
   var want = [], seen = {};
   Array.prototype.forEach.call(document.querySelectorAll('[data-th]'), function(e){
     var l = e.getAttribute('data-th');
-    if (!l || seen[l] || thumbs[l]) return;
+    if (!l || seen[l] || thumbs[l] || asking[l]) return;
     seen[l] = 1;
     want.push(l);
   });
   if (!want.length) return;
 
-  var run = ++thumbRun;
-  callApi({ api: 'thumbs', init: initData(), links: want.slice(0, 24) })
+  want = want.slice(0, 24);
+  want.forEach(function(l){ asking[l] = 1; });
+
+  callApi({ api: 'thumbs', init: initData(), links: want })
     .then(function(res){
-      if (run !== thumbRun || !res || !res.ok) return;
+      want.forEach(function(l){ delete asking[l]; });
+      if (!res || !res.ok) return;
       var got = res.thumbs || {}, n = 0;
       for (var k in got) { thumbs[k] = got[k]; n++; }
       if (n) { saveThumbs(); paintThumbs(); }
@@ -555,7 +593,7 @@ function loadThumbs(){
       // за остатком; иначе останавливаемся, чтобы не зациклиться.
       if (res.more && n) loadThumbs();
     })
-    .catch(function(){});
+    .catch(function(){ want.forEach(function(l){ delete asking[l]; }); });
 }
 
 /* ── переключатель вида ── */
@@ -844,7 +882,7 @@ function editSheet(r){
   showSheet(
     '<div class="grab"></div>' +
     '<h3>Изменить</h3>' +
-    '<div class="sub">' + esc(r.owner + ' → ' + r.cat) + '</div>' +
+    '<div class="sub">' + esc(bare(r.owner) + ' → ' + bare(r.cat)) + '</div>' +
     '<div id="edmsg"></div>' +
     field('e_name', 'Название документа', r.name) +
     field('e_org',  'Организация',        r.org) +
@@ -987,32 +1025,40 @@ function actsHtml(r){
   return '<div class="acts">' +
     (r.link ? b('a', 's_open', 'i-link', 'Открыть', false, r.link) : '') +
     b('button', 's_fav', 'i-star', 'Избранное', r.fav) +
-    (r.link ? b('button', 's_share', 'i-share', 'Поделиться') : '') +
+    (r.link ? b('button', 's_share', 'i-share', 'Отправить') : '') +
     b('button', 's_edit', 'i-edit', 'Изменить') +
     b('button', 's_move', 'i-move', 'Перенести') +
   '</div>';
 }
 
+/* Звезда переключается сразу, не дожидаясь сервера: действие
+   безобидное, а секунда ожидания на каждое нажатие ощущается как
+   тормоз. Если сервер откажет — возвращаем как было и говорим. */
 function toggleFav(r){
   var want = !r.fav;
   var b    = el('s_fav');
   tap('medium');
-  b.disabled = true;
+
+  r.fav = want;
+  if (b) b.classList.toggle('on', want);
+  if (want) fx('star', 'В избранном');
+  drawList(el('q').value);
+  drawDeadlines();
+
+  function back(msg){
+    r.fav = !want;
+    var cur = el('s_fav');
+    if (cur) cur.classList.toggle('on', !want);
+    drawList(el('q').value);
+    drawDeadlines();
+    say(msg);
+  }
 
   callApi({ api: 'star', init: initData(), link: r.link, name: r.name, on: want ? 1 : 0 })
     .then(function(res){
-      b.disabled = false;
-      if (!res || !res.ok) {
-        say('Не вышло: ' + (res && res.error || 'нет ответа'));
-        return;
-      }
-      r.fav = want;
-      b.classList.toggle('on', want);
-      if (want) fx('star', 'В избранном');
-      drawList(el('q').value);
-      drawDeadlines();
+      if (!res || !res.ok) back('Не вышло: ' + (res && res.error || 'нет ответа'));
     })
-    .catch(function(e){ b.disabled = false; say(e.message || String(e)); });
+    .catch(function(e){ back(e.message || String(e)); });
 }
 
 var NEWCAT = '__new__';   // служебное значение пункта «Новая папка»
@@ -1033,7 +1079,7 @@ function moveSheet(r, pickedOwner){
     '<h3>Переместить</h3>' +
     '<div class="sub">' + esc(r.name) + '</div>' +
     '<div class="hint" style="margin-bottom:18px">Сейчас: ' +
-      esc(r.owner + ' → ' + r.cat) + '</div>' +
+      esc(bare(r.owner) + ' → ' + bare(r.cat)) + '</div>' +
     '<div id="mvmsg"></div>' +
     picker('mv_owner', 'Кому', ownerOpts(), ok) +
     picker('mv_cat',   'Папка',
@@ -1161,7 +1207,7 @@ function ownerSheet(ownerKey){
   showSheet(
     '<div class="grab"></div>' +
     '<h3>' + esc(o.label) + '</h3>' +
-    '<div class="sub">' + f + ' папок · ' + plural(n) + '</div>' +
+    '<div class="sub">' + folders(f) + ' · ' + plural(n) + '</div>' +
     '<div id="owmsg"></div>' +
     '<div class="field"><label>Название</label>' +
       '<textarea class="ta" id="ow_name" rows="1">' + esc(o.label) + '</textarea></div>' +
@@ -1214,7 +1260,7 @@ function folderSheet(ownerKey, catKey, moveTo){
   showSheet(
     '<div class="grab"></div>' +
     '<h3>' + esc(c.label) + '</h3>' +
-    '<div class="sub">' + esc(o.label) + ' · ' + plural(n) + '</div>' +
+    '<div class="sub">' + esc(bare(o.label)) + ' · ' + plural(n) + '</div>' +
     '<div id="fdmsg"></div>' +
     '<div class="field"><label>Название папки</label>' +
       '<textarea class="ta" id="fd_name" rows="1">' + esc(c.label) + '</textarea></div>' +
@@ -1330,6 +1376,10 @@ function loadPreview(r){
   shareOpen = false;
 
   if (previews[r.link]) return paintPreview(box, previews[r.link], r);
+
+  // Пока едет большое превью, показываем уже готовую миниатюру:
+  // документ виден сразу, а не через секунду серого прямоугольника.
+  if (thumbs[r.link]) paintPreview(box, thumbs[r.link], r);
 
   callApi({ api: 'preview', init: initData(), link: r.link })
     .then(function(res){
@@ -1569,7 +1619,7 @@ function ask(){
   callApi({ api: 'ask', init: initData(), q: q })
     .then(function(res){
       el('send').disabled = false;
-      var text = (res && res.ok) ? res.answer
+      var text = (res && res.ok) ? (res.answer || 'Ответ пришёл пустым.')
                : 'Не получилось: ' + (res && res.error || 'нет ответа');
       el('thread').innerHTML =
         '<div class="bubble">' + esc(q) + '</div>' +
@@ -1809,7 +1859,7 @@ function updateHead(name){
     var c = (o && navCat) ? catOf(navOwner, navCat) : null;
     el('subtitle').textContent =
       c ? plural(docsIn(o.label, c.label).length)
-        : o ? ((CATS[o.key] || []).length + ' папок · ' + plural(docsIn(o.label, null).length))
+        : o ? (folders((CATS[o.key] || []).length) + ' · ' + plural(docsIn(o.label, null).length))
             : plural(rows.length) + ' в архиве';
   } else {
     el('subtitle').textContent = t[1];

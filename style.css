@@ -456,7 +456,7 @@ nav .dot{
 .views{flex:0 0 auto;display:flex;gap:2px;background:var(--surface);border-radius:999px;padding:3px}
 .views button{
   border:none;background:none;cursor:pointer;color:var(--muted);
-  width:32px;height:28px;border-radius:999px;display:grid;place-items:center;
+  width:38px;height:34px;border-radius:9px;display:grid;place-items:center;
   transition:background .16s,color .16s;padding:0;
 }
 .views button svg{width:16px;height:16px;stroke-width:1.9}
@@ -480,7 +480,7 @@ nav .dot{
 .tile .cap{padding:10px 12px 12px}
 .tile .cap .t{
   font-weight:600;font-size:13.5px;line-height:1.3;letter-spacing:-.006em;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
   overflow-wrap:anywhere;
 }
 .tile .cap .s{
@@ -509,7 +509,8 @@ nav .dot{
 /* ── меню папки ── */
 .dots{
   flex:0 0 auto;border:none;background:none;cursor:pointer;color:var(--muted);
-  width:32px;height:32px;border-radius:50%;display:grid;place-items:center;padding:0;
+  width:40px;height:40px;margin:-4px -6px -4px 0;
+  border-radius:50%;display:grid;place-items:center;padding:0;
   transition:background .16s,color .16s;
 }
 .dots svg{width:18px;height:18px}
@@ -645,7 +646,7 @@ nav .dot{
 .seg.wait{opacity:.5;pointer-events:none}
 .seg b{
   font-size:11.5px;font-weight:650;color:var(--muted);
-  padding:6px 11px;border-radius:7px;cursor:pointer;
+  padding:9px 12px;border-radius:7px;cursor:pointer;
   transition:background .16s,color .16s;
 }
 .seg b.on{background:var(--accent);color:var(--onacc)}
@@ -680,10 +681,10 @@ h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12px}
   stroke-linecap:round;stroke-linejoin:round}
 
 /* Ряд действий в карточке документа */
-.acts{display:flex;gap:7px;margin:14px 0 4px}
+.acts{display:flex;gap:6px;margin:14px 0 4px}
 .act2{
   flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;
-  padding:11px 2px 9px;border:1px solid var(--line);border-radius:14px;
+  padding:11px 1px 9px;border:1px solid var(--line);border-radius:14px;
   background:var(--surface);color:var(--fg);font:inherit;cursor:pointer;
   text-decoration:none;transition:transform .14s var(--ease),border-color .16s;
 }
@@ -691,7 +692,7 @@ h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12px}
 .act2 svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;
   stroke-linecap:round;stroke-linejoin:round}
 .act2 span{
-  font-size:9.5px;font-weight:600;color:var(--muted);letter-spacing:.01em;
+  font-size:9.5px;font-weight:600;color:var(--muted);letter-spacing:-.01em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
 }
 .act2.on{border-color:var(--amber);color:var(--amber)}
@@ -700,4 +701,13 @@ h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12px}
 
 /* Номер сборки — чтобы при разговоре о «не обновилось» было что
    назвать, а не гадать, какая версия доехала до телефона. */
-.build{margin-top:26px;text-align:center;font-size:10.5px;color:#4a5767;letter-spacing:.06em}
+.build{margin-top:26px;text-align:center;font-size:10.5px;color:var(--muted);
+  opacity:.75;letter-spacing:.06em}
+
+/* На узких экранах (320 px и уже) подписи под значками не влезают
+   целиком. Уменьшаем их, но не убираем: ряд из одних значков без
+   слов читается хуже, чем мелкий, но понятный текст. */
+@media (max-width: 349px){
+  .act2{padding:10px 0 8px}
+  .act2 span{font-size:8.6px;letter-spacing:-.02em}
+}
