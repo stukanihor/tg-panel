@@ -542,7 +542,7 @@ function saveThumbs(){
 function shotHtml(r, color){
   if (!r.link) return icon(catIcon(r.cat), color || '');
   var t = thumbs[r.link];
-  return '<span class="mini" data-th="' + esc(r.link) + '">' +
+  return '<span class="docshot" data-th="' + esc(r.link) + '">' +
          (t ? '<img src="' + t + '" alt="">' : icon(catIcon(r.cat), color || '')) +
          '</span>';
 }
