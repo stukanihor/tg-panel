@@ -222,15 +222,8 @@ function cardHtml(r, color, n, showPath){
   var i = rows.indexOf(r);
   var badge = badgeHtml(r);
 
-  var sub;
-  if (showPath === false) {
-    // Внутри папки владелец и папка и так известны — показываем организацию.
-    sub = r.org || 'без организации';
-    if (r.until && !r.ever) sub += ' · до ' + fmtDay(r.until);
-  } else {
-    sub = bare(r.owner) + ' · ' + bare(r.cat);
-    if (r.until && !r.ever) sub += ' · до ' + fmtDay(r.until);
-  }
+  var sub = subFor(r, showPath);
+  if (r.until && !r.ever) sub += ' · до ' + fmtDay(r.until);
 
   return '<div class="card" data-i="' + i + '" style="animation-delay:' +
            Math.min(n * 28, 240) + 'ms">' +
@@ -293,7 +286,8 @@ function drawList(query){
     h = hit.length ? docsHtml(hit, true) : '<div class="state">Ничего не нашлось.</div>';
     docs = true;
   } else if (!navOwner) {
-    h = favHtml() + ownersHtml();
+    h = rootSeg() + favHtml() + (rootAll ? byOwnerHtml() : ownersHtml());
+    docs = rootAll;
   } else if (!navCat) {
     h = foldersHtml(navOwner);
   } else if (navCat === LOSTCAT) {
@@ -352,7 +346,34 @@ function bindCrumbs(){
   });
 }
 
-/* ── уровень 1: владельцы ── */
+/* ── уровень 1: владельцы ──
+   Два вида на выбор. Папками — когда ищешь по смыслу и знаешь, где
+   лежит. Списком — когда хочешь увидеть всё, что есть у человека, и
+   не помнишь, в какой папке оно оказалось. Выбор запоминается. */
+var rootAll = false;
+try { rootAll = localStorage.getItem('root') === 'all'; } catch (e) {}
+
+function rootSeg(){
+  return '<div class="seg wide" id="rootseg">' +
+    '<b class="' + (rootAll ? '' : 'on') + '" data-r="0">Папки</b>' +
+    '<b class="' + (rootAll ? 'on' : '') + '" data-r="1">Все документы</b>' +
+  '</div>';
+}
+
+function byOwnerHtml(){
+  var h = '';
+  OWNERS.forEach(function(o, i){
+    var list = docsIn(o.label, null);
+    if (!list.length) return;
+    h += '<div class="group"><h2 class="owh">' +
+         '<span class="av a' + (i % 4) + '">' + esc(bare(o.label).charAt(0)) + '</span>' +
+         esc(bare(o.label)) + ' · ' + plural(list.length) + '</h2>' +
+         docsHtml(list, 'cat') + '</div>';
+  });
+  return h || '<div class="state">В архиве пока пусто.</div>';
+}
+
+
 function favHtml(){
   var list = rows.filter(function(r){ return r.fav; });
   if (!list.length) return '';
@@ -434,7 +455,14 @@ function docsHtml(list, showPath){
   return h + '</div>';
 }
 
-function pathOf(r){ return r.owner + ' · ' + r.cat.replace(/^[\d.]+\s*/, ''); }
+/* Что писать под названием документа. Зависит от того, что и так
+   видно по месту: внутри папки владелец и папка известны, в списке
+   по владельцу известен владелец, в поиске — ничего. */
+function subFor(r, mode){
+  if (mode === false)  return r.org || 'без организации';
+  if (mode === 'cat')  return bare(r.cat) + (r.org ? ' · ' + r.org : '');
+  return bare(r.owner) + ' · ' + bare(r.cat);
+}
 
 function tilesHtml(list, showPath){
   var h = '<div class="tiles">';
@@ -447,7 +475,8 @@ function tilesHtml(list, showPath){
            (thumbs[r.link] ? '<img src="' + thumbs[r.link] + '" alt="">' : icon(catIcon(r.cat))) +
          '</div>' +
          '<div class="cap"><div class="t">' + esc(r.name) + '</div>' +
-         '<div class="s">' + esc(showPath ? pathOf(r) : (r.until && !r.ever ? 'до ' + fmtDay(r.until) : 'бессрочный')) +
+         '<div class="s">' + esc(showPath ? subFor(r, showPath)
+              : (r.until && !r.ever ? 'до ' + fmtDay(r.until) : 'бессрочный')) +
          '</div></div>' + badgeHtml(r) + (r.fav ? '<span class="star"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg></span>' : '') + '</div>';
   });
   return h + '</div>';
@@ -460,7 +489,7 @@ function compactHtml(list, showPath){
     h += '<div class="line" data-i="' + i + '" style="animation-delay:' +
          Math.min(n * 14, 180) + 'ms">' +
          '<span class="nm">' + esc(r.name) + '</span>' +
-         (showPath ? '<span class="pt">' + esc(pathOf(r)) + '</span>' : '') +
+         (showPath ? '<span class="pt">' + esc(subFor(r, showPath)) + '</span>' : '') +
          (r.fav ? '<span class="star"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg></span>' : '') + badgeHtml(r) + '</div>';
   });
   return h + '</div>';
@@ -586,6 +615,19 @@ function bindFolders(){
       else    folderSheet(navOwner, b.getAttribute('data-m'));
     };
   });
+
+  var seg = el('rootseg');
+  if (seg) {
+    Array.prototype.forEach.call(seg.querySelectorAll('b'), function(b){
+      b.onclick = function(){
+        tap();
+        rootAll = b.getAttribute('data-r') === '1';
+        try { localStorage.setItem('root', rootAll ? 'all' : 'folders'); } catch (e) {}
+        drawList('');
+        el('scroll').scrollTop = 0;
+      };
+    });
+  }
 
   var add = el('newFolder');
   if (add) add.onclick = function(){ tap(); newFolderSheet(navOwner); };

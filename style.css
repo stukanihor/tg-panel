@@ -656,3 +656,14 @@ nav .dot{
 .tdate b.soon{color:var(--amber)}
 .tdate span{flex:1;min-width:150px;font-size:11.5px;color:var(--muted);line-height:1.4}
 .tnote{margin-top:10px;font-size:12px;color:#8fcbb0;line-height:1.45}
+
+/* Переключатель вида на первой странице «Архива» */
+.seg.wide{width:100%;margin:2px 0 16px}
+.seg.wide b{flex:1;text-align:center;padding:9px 10px;font-size:13px}
+
+/* Заголовок группы документов одного владельца */
+h2.owh{
+  display:flex;align-items:center;gap:9px;margin:0 0 10px 0;
+  font-size:13.5px;font-weight:650;letter-spacing:0;text-transform:none;color:var(--fg);
+}
+h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12px}
