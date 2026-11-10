@@ -562,7 +562,7 @@ function badgeHtml(r){
    собирался несколько секунд. Теперь бот отдаёт их пачкой из своего
    кэша, а здесь они ещё и переживают переходы между экранами. */
 var THUMB_CAP   = 2500000;  // примерно 2,5 МБ — предел хранилища браузера с запасом
-var THUMB_CHUNK = 3;        // столько миниатюр просим за один заход
+var THUMB_CHUNK = 12;       // столько миниатюр просим за один заход
 
 var thumbs = {};
 try { thumbs = JSON.parse(localStorage.getItem('thumbs') || '{}') || {}; }
@@ -621,6 +621,22 @@ var asking = {}, thumbWait = 0, thumbTold = false;
    обновили, метод не найден, и плитки молча остаются со значками.
    Один раз за сеанс говорим вслух, в чём дело: догадаться по виду
    экрана невозможно. */
+var thumbSoonTold = false, thumbRetry = 0;
+
+function thumbsSoon(){
+  if (thumbSoonTold) return;
+  thumbSoonTold = true;
+  toast('Готовлю превью документов — появятся в течение минуты.', 4200);
+}
+
+/* Фоновая подготовка на стороне бота идёт раз в минуту, поэтому
+   просто подождём и попросим ещё раз. Одна отложенная попытка за
+   раз: плодить таймеры при каждом переходе между экранами незачем. */
+function thumbsLater(){
+  if (thumbRetry) return;
+  thumbRetry = setTimeout(function(){ thumbRetry = 0; loadThumbs(); }, 25000);
+}
+
 function thumbsFailed(err){
   if (thumbTold) return;
   thumbTold = true;
@@ -669,13 +685,14 @@ function askThumbs(){
       for (var k in got) { thumbs[k] = got[k]; n++; }
       if (n) { saveThumbs(); paintThumbs(); }
 
-      // Ответ пришёл, но пустой: бот сходил к Drive и ничего не
-      // получил. Молчать тут нельзя — снаружи это выглядит ровно
-      // как «ничего не работает».
-      if (!n && res.tried) thumbsFailed('Drive не отдал уменьшенные копии');
+      // Ничего не пришло, но бот говорит, что готово не всё: копии
+      // сейчас делаются в фоне. Сказать об этом стоит один раз, и
+      // вернуться за ними попозже — сам пользователь ничего делать
+      // не должен.
+      if (!n && res.more) { thumbsSoon(); thumbsLater(); }
+      else if (!n && res.tried) thumbsFailed('Drive не отдал уменьшенные копии');
 
-      // Идём за следующей порцией, только если эта что-то принесла:
-      // иначе при недоступном Drive получился бы бесконечный круг.
+      // Пришло — сразу за следующей порцией.
       if (n) loadThumbs();
     })
     .catch(function(e){
