@@ -98,8 +98,8 @@ window.addEventListener('orientationchange', function(){ setTimeout(fitViewport,
    начинался бы с заведомо неудачной попытки. */
 var jsonpOnly = false;
 
-function callApi(params){
-  if (jsonpOnly && !params.files) return jsonp(toQuery(params));
+function callApi(params, wait){
+  if (jsonpOnly && !params.files) return jsonp(toQuery(params), wait);
 
   return fetch(API, { method: 'POST', body: JSON.stringify(params) })
     .then(function(r){ return r.json(); })
@@ -108,7 +108,7 @@ function callApi(params){
       if (params.files) throw new Error('не удалось отправить файл на сервер');
       jsonpOnly = true;
       markRoute();
-      return jsonp(toQuery(params));
+      return jsonp(toQuery(params), wait);
     });
 }
 
@@ -136,16 +136,40 @@ function toQuery(params){
 }
 
 var seq = 0;
-function jsonp(qs){
+
+/* Запасной путь: ответ приезжает как исполняемый код и сам зовёт
+   нашу функцию. Отсюда три способа узнать о неудаче, и нужны все
+   три: сеть не пустила (onerror), ответ пришёл, но не вызвал нас —
+   например, это оказался обычный JSON (onload без ответа), и бот
+   думает слишком долго (срок ожидания). Без последних двух запрос
+   просто повисал молча. */
+function jsonp(qs, wait){
   return new Promise(function(resolve, reject){
     var name = '__cb' + (++seq) + '_' + Date.now();
     var s    = document.createElement('script');
     var done = false;
-    window[name] = function(d){ done = true; resolve(d); delete window[name]; s.remove(); };
-    s.onerror = function(){ if (!done) { reject(new Error('сервер недоступен')); s.remove(); } };
+
+    function finish(fn, arg){
+      if (done) return;
+      done = true;
+      delete window[name];
+      if (s.parentNode) s.remove();
+      fn(arg);
+    }
+
+    window[name] = function(d){ finish(resolve, d); };
+    s.onerror = function(){ finish(reject, new Error('сервер недоступен')); };
+    s.onload  = function(){
+      setTimeout(function(){ finish(reject, new Error('ответ не распознан')); }, 60);
+    };
+
     s.src = API + '?' + qs + '&callback=' + name;
     document.body.appendChild(s);
-    setTimeout(function(){ if (!done) reject(new Error('сервер не ответил за 90 секунд')); }, 90000);
+
+    var ms = wait || 90000;
+    setTimeout(function(){
+      finish(reject, new Error('сервер не ответил за ' + Math.round(ms / 1000) + ' секунд'));
+    }, ms);
   });
 }
 
@@ -538,7 +562,7 @@ function badgeHtml(r){
    собирался несколько секунд. Теперь бот отдаёт их пачкой из своего
    кэша, а здесь они ещё и переживают переходы между экранами. */
 var THUMB_CAP   = 2500000;  // примерно 2,5 МБ — предел хранилища браузера с запасом
-var THUMB_CHUNK = 5;        // столько миниатюр просим за один заход
+var THUMB_CHUNK = 3;        // столько миниатюр просим за один заход
 
 var thumbs = {};
 try { thumbs = JSON.parse(localStorage.getItem('thumbs') || '{}') || {}; }
@@ -607,6 +631,8 @@ function thumbsFailed(err){
       ? 'Бот не успел подготовить превью. Открой экран ещё раз — остальные догрузятся.'
     : /не отдал/i.test(why)
       ? 'Drive пока не сделал уменьшенные копии. Обычно появляются через несколько минут.'
+    : /не ответил|не дошёл|недоступен/i.test(why)
+      ? 'Бот не ответил на запрос превью: ' + why + '. Открой экран ещё раз.'
     : 'Превью не пришли: ' + (why || 'нет ответа'), 5200);
 }
 
@@ -633,7 +659,9 @@ function askThumbs(){
   want = want.slice(0, THUMB_CHUNK);
   want.forEach(function(l){ asking[l] = 1; });
 
-  callApi({ api: 'thumbs', init: initData(), links: want })
+  // Ждать миниатюры полторы минуты бессмысленно: если бот не успел,
+  // быстрее попросить ещё раз меньшей порцией, чем держать экран.
+  callApi({ api: 'thumbs', init: initData(), links: want }, 25000)
     .then(function(res){
       want.forEach(function(l){ delete asking[l]; });
       if (!res || !res.ok) return thumbsFailed(res && res.error);
@@ -650,7 +678,12 @@ function askThumbs(){
       // иначе при недоступном Drive получился бы бесконечный круг.
       if (n) loadThumbs();
     })
-    .catch(function(){ want.forEach(function(l){ delete asking[l]; }); });
+    .catch(function(e){
+      want.forEach(function(l){ delete asking[l]; });
+      // Раньше здесь было пусто, и неудача выглядела как «ничего не
+      // происходит»: ни картинок, ни объяснения. Молчать нельзя.
+      thumbsFailed(e && e.message || 'запрос не дошёл');
+    });
 }
 
 /* ── переключатель вида ── */
