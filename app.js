@@ -11,6 +11,7 @@ var rows   = [];
 var trash  = [];     // удалённое: лежит в «99_Архив», можно вернуть
 var OWNERS = [];
 var CATS   = {};
+var ME     = { admin: true, all: true };   // кто открыл: хозяин или участник
 var draft  = null;     // загруженный документ, ждущий подтверждения
 var filter = '';       // выбранная плитка на экране «Сроки»
 var shown  = null;     // документ, открытый в карточке
@@ -32,6 +33,7 @@ var TITLES = {
 };
 
 var HINTS = [
+  'на какие письма нужно ответить',
   'за сколько предупреждать о выезде',
   'какой залог за квартиру',
   'что входит в страховку',
@@ -197,6 +199,7 @@ function boot(){
       trash  = res.trash  || [];
       OWNERS = res.owners || [];
       CATS   = res.cats   || {};
+      ME     = res.me     || { admin: true, all: true };
       drawDeadlines();
       drawList('');
       updateHead('deadlines');
@@ -244,9 +247,15 @@ function drawDeadlines(){
   var rest = rows.filter(function(r){ return bucket(r) === 'ok'; });
 
   var h = '';
+  var todo = replyList();
   if (!rows.length) {
     h = '<div class="state">В архиве пока пусто.<br>Добавь первый документ.</div>';
   } else {
+    if (!filter && todo.length) {
+      h += '<div class="group"><h2>Ответить или оплатить</h2>';
+      todo.forEach(function(r, n){ h += replyCard(r, n); });
+      h += '</div>';
+    }
     if ((!filter || filter === 'over') && over.length) h += section('Просрочено', over, 'red');
     if ((!filter || filter === 'soon') && soon.length) h += section('Истекает в ближайшие 60 дней', soon, 'amber');
     if ((!filter || filter === 'ok')   && rest.length) h += section('В порядке', rest, 'green');
@@ -256,6 +265,39 @@ function drawDeadlines(){
   el('deadlines').innerHTML = h;
   bindCards();
   loadThumbs();
+}
+
+/* Письма и счета со сроком ответа или оплаты, ещё не отмеченные
+   «сделано». Самое срочное сверху. */
+function replyList(){
+  return rows.filter(function(r){ return r.reply && !r.done; })
+             .sort(function(a, b){ return (a.replyDays || 0) - (b.replyDays || 0); });
+}
+
+function replyBadge(r){
+  var d = r.replyDays;
+  if (d === null || d === undefined) return '';
+  if (d < 0)   return '<span class="badge red">' + Math.abs(d) + ' дн. назад</span>';
+  if (d === 0) return '<span class="badge red">сегодня</span>';
+  if (d <= 2)  return '<span class="badge red">' + d + ' дн.</span>';
+  if (d <= 7)  return '<span class="badge amber">' + d + ' дн.</span>';
+  return '';
+}
+
+function replyVerb(r){ return r.kind === 'счёт' ? 'оплатить до ' : 'ответить до '; }
+
+function replyCard(r, n){
+  var i   = rows.indexOf(r);
+  var hot = r.replyDays !== null && r.replyDays <= 2;
+  // Дата — первой: строка обрезается справа, а без даты карточка бесполезна.
+  var sub = 'до ' + fmtDay(r.reply) + (r.amount ? ' · ' + r.amount : '') + ' · ' + bare(r.owner);
+  return '<div class="card" data-i="' + i + '" style="animation-delay:' +
+           Math.min(n * 28, 240) + 'ms">' +
+           shotHtml(r, hot ? 'red' : 'amber') +
+           '<div class="body"><div class="t">' + esc(r.name) + '</div>' +
+           '<div class="s">' + esc(sub) + '</div></div>' +
+           (replyBadge(r) || '<span class="chev"><svg viewBox="0 0 24 24"><use href="#i-chev"/></svg></span>') +
+         '</div>';
 }
 
 function statTile(key, n, label, color){
@@ -335,12 +377,12 @@ function drawList(query){
   var h = '', docs = false;
 
   if (q) {
-    var hit = rows.filter(function(r){
-      return (r.name + ' ' + r.org + ' ' + r.number + ' ' + r.cat + ' ' +
-              r.owner + ' ' + r.note).toLowerCase().indexOf(q) !== -1;
-    });
-    h = hit.length ? docsHtml(hit, true) : '<div class="state">Ничего не нашлось.</div>';
+    var hit = rows.filter(function(r){ return hayOf(r).indexOf(q) !== -1; });
+    h = (hit.length ? docsHtml(hit, true)
+                    : (q.length >= 3 ? '' : '<div class="state">Ничего не нашлось.</div>')) +
+        (q.length >= 3 ? '<div id="txthits"><div class="hint txtwait">Ищу ещё и в тексте документов…</div></div>' : '');
     docs = true;
+    textSearch(q, hit);
   } else if (!navOwner) {
     h = rootSeg() + favHtml() + (rootAll ? byOwnerHtml() : ownersHtml());
     docs = rootAll;
@@ -369,6 +411,86 @@ function drawList(query){
   loadThumbs();
   if (el('s-archive').classList.contains('on')) updateHead('archive');
   syncBack();
+}
+
+/* Всё, что видно о документе, одной строкой — для поиска на месте. */
+function hayOf(r){
+  return [r.name, r.org, r.number, r.cat, r.owner, r.note, r.summary, r.amount,
+          (r.refs || []).map(function(x){ return x.k + ' ' + x.v; }).join(' ')]
+         .join(' ').toLowerCase();
+}
+
+/* Поиск по самому тексту документов идёт на сервере: тексты большие,
+   держать их в телефоне незачем. Названия и номера ищутся мгновенно
+   на месте, а через полсекунды тишины к ним добавляется то, что
+   нашлось только внутри документов, — с отрывком, где именно. */
+var searchSeq = 0, searchTimer = 0;
+
+function textSearch(q, local){
+  clearTimeout(searchTimer);
+  var my = ++searchSeq;
+  if (q.length < 3) return;
+
+  searchTimer = setTimeout(function(){
+    callApi({ api: 'search', init: initData(), q: q }, 15000)
+      .then(function(res){ showTextHits(my, q, local, res); })
+      .catch(function(){ showTextHits(my, q, local, null); });
+  }, 450);
+}
+
+function showTextHits(my, q, local, res){
+  if (my !== searchSeq) return;                       // уже ищем другое
+  var box = el('txthits');
+  if (!box) return;
+
+  var have = {};
+  local.forEach(function(r){ have[r.link] = 1; });
+  var byLink = {};
+  rows.forEach(function(r){ if (r.link) byLink[r.link] = r; });
+
+  var extra = ((res && res.ok && res.hits) || []).filter(function(x){
+    return x.inText && !have[x.link] && byLink[x.link];
+  });
+
+  if (!extra.length) {
+    box.innerHTML = local.length ? '' : '<div class="state">Ничего не нашлось — ни в названиях, ' +
+      'ни в тексте документов.</div>';
+    return;
+  }
+
+  var h = '<div class="group"><h2>Найдено в тексте документов</h2>';
+  extra.forEach(function(x, n){
+    var r = byLink[x.link];
+    h += '<div class="card txthit" data-i="' + rows.indexOf(r) + '" style="animation-delay:' +
+         Math.min(n * 28, 240) + 'ms">' + shotHtml(r, '') +
+         '<div class="body"><div class="t">' + esc(r.name) + '</div>' +
+         '<div class="s">' + esc(bare(r.owner) + ' · ' + bare(r.cat)) + '</div>' +
+         (x.snip ? '<div class="snip">' + markHtml(x.snip, q) + '</div>' : '') +
+         '</div></div>';
+  });
+  box.innerHTML = h + '</div>';
+  bindCards();
+  loadThumbs();
+}
+
+/* Подсветка искомых слов в отрывке. Без учёта умлаутов: «kundigung»
+   подсветит и «Kündigung». */
+function markHtml(text, q){
+  function fold(s){ return s.toLowerCase().replace(/ä/g,'a').replace(/ö/g,'o').replace(/ü/g,'u').replace(/ё/g,'е'); }
+  var f = fold(text), words = fold(q).split(/\s+/).filter(function(w){ return w.length >= 2; });
+  var marks = [];
+  words.forEach(function(w){
+    var at = f.indexOf(w);
+    while (at !== -1) { marks.push([at, at + w.length]); at = f.indexOf(w, at + w.length); }
+  });
+  marks.sort(function(a, b){ return a[0] - b[0]; });
+  var out = '', pos = 0;
+  marks.forEach(function(m){
+    if (m[0] < pos) return;
+    out += esc(text.slice(pos, m[0])) + '<mark>' + esc(text.slice(m[0], m[1])) + '</mark>';
+    pos = m[1];
+  });
+  return out + esc(text.slice(pos));
 }
 
 /* ── хлебные крошки ── */
@@ -461,8 +583,11 @@ function ownersHtml(){
          '<span class="av a' + (i % 4) + '">' + esc(bare(o.label).charAt(0)) + '</span>' +
          '<div class="body"><div class="t">' + esc(bare(o.label)) + '</div>' +
          '<div class="s">' + folders(f) + ' · ' + plural(n) + '</div></div>' +
-         '<button class="dots" data-mo="' + esc(o.key) + '" aria-label="Переименовать">' +
-         '<svg viewBox="0 0 24 24"><use href="#i-dots"/></svg></button></div>';
+         (ME.admin
+           ? '<button class="dots" data-mo="' + esc(o.key) + '" aria-label="Переименовать">' +
+             '<svg viewBox="0 0 24 24"><use href="#i-dots"/></svg></button>'
+           : '<span class="chev"><svg viewBox="0 0 24 24"><use href="#i-chev"/></svg></span>') +
+         '</div>';
   });
   return h + '</div>';
 }
@@ -876,18 +1001,27 @@ function openSheet(r){
   var sub = state === 'over' ? 'Просрочен ' + Math.abs(r.days) + ' дн. назад'
           : state === 'soon' ? 'Истекает через ' + r.days + ' дн.'
           : (r.until && !r.ever) ? 'Действует до ' + fmtDay(r.until) : 'Бессрочный';
+  // У письма или счёта без срока действия «Бессрочный» только путает:
+  // для них важен срок ответа, он и показан.
+  var letter = (r.kind === 'письмо' || r.kind === 'счёт') && !r.until;
 
   el('sheet').innerHTML =
     '<div class="grab"></div>' +
     (r.link ? '<div class="prev" id="prev"><div class="skel tall"></div></div>' : '') +
     '<h3>' + esc(r.name) + '</h3>' +
-    '<div class="sub"><span class="pill ' + state + '">' + esc(sub) + '</span></div>' +
+    '<div class="sub pills">' + (letter ? '' : '<span class="pill ' + state + '">' + esc(sub) + '</span>') +
+      replyPill(r) + (r.urgency === 'высокая' && !r.done ? '<span class="pill over">срочно</span>' : '') +
+    '</div>' +
     actsHtml(r) +
-    termHtml(r) +
+    (r.summary ? '<div class="memo sum"><b>Суть</b>' + esc(r.summary) + '</div>' : '') +
+    doneHtml(r) +
+    (letter ? '' : termHtml(r)) +
+    refsHtml(r) +
     kv('Кому', bare(r.owner)) +
     kv('Папка', r.cat) +
     kv('Организация', r.org) +
     kv('Номер', r.number) +
+    kv('Сумма', r.amount) +
     kv('Выдан', fmtDay(r.issued)) +
     (r.note ? '<div class="memo">' + esc(r.note) + '</div>' : '') +
     '<button class="btn danger" id="s_del">Удалить из архива</button>';
@@ -898,12 +1032,101 @@ function openSheet(r){
   el('s_move').onclick = function(){ tap(); moveSheet(r); };
   el('s_del').onclick  = function(){ askDelete(r); };
   bindTerm(r);
+  bindDone(r);
+  bindRefs(r);
   if (r.link) loadPreview(r);
 
   el('scrim').classList.add('on');
   document.body.classList.add('sheet-open');
   el('sheet').scrollTop = 0;
   syncBack();
+}
+
+/* ── письма и счета: срок ответа, «сделано», реквизиты ── */
+function replyPill(r){
+  if (!r.reply) return '';
+  var bill = r.kind === 'счёт';
+  if (r.done) return '<span class="pill ok">' + (bill ? 'Оплачено' : 'Сделано') + '</span>';
+  var d = r.replyDays;
+  var cls = d !== null && d <= 2 ? 'over' : d !== null && d <= 7 ? 'soon' : 'ok';
+  var tail = d === null ? '' : d < 0 ? ' · срок прошёл' : d === 0 ? ' · сегодня' : ' · ' + d + ' дн.';
+  return '<span class="pill ' + cls + '">' + (bill ? 'Оплатить до ' : 'Ответить до ') +
+         esc(fmtDay(r.reply)) + tail + '</span>';
+}
+
+function doneHtml(r){
+  if (!(r.reply || r.kind === 'счёт' || r.amount)) return '';
+  var bill = r.kind === 'счёт';
+  return '<div class="term' + (r.done ? ' off' : '') + '">' +
+    '<div class="trow"><span>' + (bill ? 'Оплата' : 'Ответ') + '</span>' +
+      '<div class="seg" id="s_done">' +
+        '<b class="' + (r.done ? '' : 'on') + '" data-d="0">' + (bill ? 'Не оплачено' : 'Ждёт') + '</b>' +
+        '<b class="' + (r.done ? 'on' : '') + '" data-d="1">' + (bill ? 'Оплачено' : 'Сделано') + '</b>' +
+      '</div></div>' +
+    '<div class="tnote">' + (r.done ? 'Напоминаний по нему больше не будет.'
+      : r.reply ? 'Бот напомнит в Telegram за 7 и за 2 дня и в последний день.'
+      : 'Срока нет — это просто отметка для себя.') + '</div></div>';
+}
+
+function bindDone(r){
+  var box = el('s_done');
+  if (!box) return;
+  Array.prototype.forEach.call(box.querySelectorAll('b'), function(b){
+    b.onclick = function(){ setDone(r, b.getAttribute('data-d') === '1'); };
+  });
+}
+
+function setDone(r, on){
+  if (!!r.done === on) return;
+  var box = el('s_done');
+  if (box) box.classList.add('wait');
+  tap('medium');
+
+  callApi({ api: 'done', init: initData(), link: r.link, name: r.name, on: on ? 1 : 0 })
+    .then(function(res){
+      if (box) box.classList.remove('wait');
+      if (!res || !res.ok) { say('Не вышло: ' + (res && res.error || 'нет ответа')); return; }
+      r.done = on;
+      if (on) fx('save', r.kind === 'счёт' ? 'Оплачено' : 'Сделано');
+      if (shown === r) openSheet(r);
+      drawDeadlines();
+      drawList(el('q').value);
+    })
+    .catch(function(e){
+      if (box) box.classList.remove('wait');
+      say(e.message || String(e));
+    });
+}
+
+/* Номера дела, IBAN и прочее, что приходится диктовать по телефону
+   или вставлять в платёж, — с кнопкой «скопировать» у каждого. */
+function refsHtml(r){
+  if (!r.refs || !r.refs.length) return '';
+  return '<div class="refs">' + r.refs.map(function(x, i){
+    return '<div class="ref"><div class="k">' + esc(x.k || 'Номер') + '</div>' +
+           '<div class="v">' + esc(x.v) + '</div>' +
+           '<button class="cp" data-cp="' + i + '" aria-label="Скопировать">' +
+           '<svg viewBox="0 0 24 24"><use href="#i-copy"/></svg></button></div>';
+  }).join('') + '</div>';
+}
+
+function bindRefs(r){
+  Array.prototype.forEach.call(document.querySelectorAll('.ref .cp'), function(b){
+    b.onclick = function(){
+      var x = r.refs[Number(b.getAttribute('data-cp'))];
+      if (!x) return;
+      tap();
+      copyText(x.v, function(){ toast('Скопировано: ' + x.v, 1800); });
+    };
+  });
+}
+
+function copyText(text, done){
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(function(){ say(text); });
+  } else {
+    say(text);
+  }
 }
 
 /* ── выгрузка архива одним файлом ── */
@@ -998,6 +1221,12 @@ function editSheet(r){
       field('e_issue', 'Дата выдачи',  r.issued, 'date') +
       field('e_exp',   'Действует до', r.until,  'date') +
     '</div>' +
+    '<div class="two">' +
+      field('e_reply', 'Ответить / оплатить до', r.reply, 'date') +
+      field('e_amt',   'Сумма',                  r.amount) +
+    '</div>' +
+    '<div class="field"><label>Суть</label><textarea id="e_sum">' +
+      esc(r.summary || '') + '</textarea></div>' +
     '<div class="field"><label>Заметка</label><textarea id="e_note">' +
       esc(r.note || '') + '</textarea></div>' +
     '<div class="hint">Владельца и папку меняет «Переместить». Имя файла ' +
@@ -1020,7 +1249,10 @@ function editSheet(r){
               number:  el('e_num').value.trim(),
               issue:   el('e_issue').value,
               expiry:  el('e_exp').value,
-              note:    el('e_note').value.trim() })
+              note:    el('e_note').value.trim(),
+              reply:   el('e_reply').value,
+              amount:  el('e_amt').value.trim(),
+              summary: el('e_sum').value.trim() })
       .then(function(res){
         if (!res || !res.ok) {
           el('e_go').disabled = false;
@@ -1485,6 +1717,7 @@ function loadPreview(r){
   var box = el('prev');
   if (!box) return;
   shareOpen = false;
+  shareUntil = 0;
 
   if (previews[r.link]) return paintPreview(box, previews[r.link], r);
 
@@ -1497,7 +1730,8 @@ function loadPreview(r){
       if (shown !== r) return;
       var fresh = el('prev');
       if (!fresh) return;
-      shareOpen = !!(res && res.open);
+      shareOpen  = !!(res && res.open);
+      shareUntil = (res && res.until) || 0;
       if (!res || !res.ok) {
         fresh.innerHTML = '<div class="prevno">' +
           esc(res && res.error || 'превью недоступно') + '</div>';
@@ -1535,12 +1769,16 @@ function drawShare(r){
       'placeholder="name@example.com"></div>' +
     '<button class="btn ghost" id="sh_mailgo">Отправить письмом</button>' +
     '<div class="hint">Документ уйдёт вложением, до 24 МБ. Копия останется ' +
-      'в «Отправленных» у i@4poll.com.</div>' +
+      'в «Отправленных» твоей почты.</div>' +
 
     '<div class="swrow"><div class="swtext"><b>Доступ по ссылке</b>' +
-      '<span>Пока включён, файл откроет любой, у кого есть ссылка</span></div>' +
+      '<span id="sh_note">' + esc(linkNote()) + '</span></div>' +
       '<label class="sw"><input type="checkbox" id="sh_link"' +
       (shareOpen ? ' checked' : '') + '><i></i></label></div>' +
+    '<div class="seg wide per" id="sh_per">' + [1, 3, 7, 0].map(function(d){
+      return '<b class="' + (d === linkDays ? 'on' : '') + '" data-p="' + d + '">' +
+             (d ? plural2(d, 'день', 'дня', 'дней') : 'Без срока') + '</b>';
+    }).join('') + '</div>' +
     '<div id="shlink">' + (shareOpen ? linkBox(r) : '') + '</div>' +
 
     '<button class="btn ghost" id="sh_back">Назад</button>';
@@ -1553,7 +1791,41 @@ function drawShare(r){
     sendShare(r, { how: 'mail', to: to });
   };
   el('sh_link').onchange = function(){ toggleLink(r, this); };
+  Array.prototype.forEach.call(el('sh_per').querySelectorAll('b'), function(b){
+    b.onclick = function(){
+      tap();
+      linkDays = Number(b.getAttribute('data-p'));
+      try { localStorage.setItem('linkDays', String(linkDays)); } catch (e) {}
+      Array.prototype.forEach.call(el('sh_per').querySelectorAll('b'), function(x){
+        x.classList.toggle('on', x === b);
+      });
+      // Ссылка уже открыта — переставляем ей срок сразу.
+      if (shareOpen) setLink(r, true, null);
+      else el('sh_note').textContent = linkNote();
+    };
+  });
   bindLinkBox(r);
+}
+
+/* Ссылка по умолчанию живёт неделю и закрывается сама: про открытый
+   доступ легко забыть, а документ остаётся открытым навсегда. */
+var linkDays = 7, shareUntil = 0;
+try {
+  var savedDays = localStorage.getItem('linkDays');
+  if (savedDays !== null && [0, 1, 3, 7].indexOf(Number(savedDays)) !== -1) linkDays = Number(savedDays);
+} catch (e) {}
+
+function linkNote(){
+  if (shareOpen && shareUntil) {
+    var d = new Date(shareUntil);
+    return 'Открыта до ' + ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) +
+           ', ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) +
+           ' — потом закроется сама';
+  }
+  if (shareOpen) return 'Открыта без срока — закроешь сам';
+  return linkDays ? 'Файл откроет любой, у кого ссылка. Закроется сама через ' +
+                    plural2(linkDays, 'день', 'дня', 'дней')
+                  : 'Файл откроет любой, у кого ссылка, пока не выключишь';
 }
 
 function linkBox(r){
@@ -1584,24 +1856,31 @@ function bindLinkBox(r){
 }
 
 function toggleLink(r, box){
-  var want = box.checked;
-  box.disabled = true;
   tap('medium');
+  setLink(r, box.checked, box);
+}
 
-  callApi({ api: 'link', init: initData(), link: r.link, on: want ? 1 : 0 })
+function setLink(r, want, box){
+  if (box) box.disabled = true;
+
+  callApi({ api: 'link', init: initData(), link: r.link, on: want ? 1 : 0,
+            days: want ? linkDays : 0 })
     .then(function(res){
-      box.disabled = false;
+      if (box) box.disabled = false;
       if (!res || !res.ok) {
-        box.checked = !want;
+        if (box) box.checked = !want;
         say('Не вышло: ' + (res && res.error || 'нет ответа'));
         return;
       }
-      shareOpen = want;
+      shareOpen  = want;
+      shareUntil = want ? (res.until || 0) : 0;
+      var note = el('sh_note');
+      if (note) note.textContent = linkNote();
       el('shlink').innerHTML = want ? linkBox(r) : '';
       bindLinkBox(r);
     })
     .catch(function(e){
-      box.disabled = false; box.checked = !want;
+      if (box) { box.disabled = false; box.checked = !want; }
       say(e.message || String(e));
     });
 }
@@ -1788,6 +2067,7 @@ el('file').onchange = function(){
       if (!res || !res.ok) return fail(res && res.error || 'нет ответа');
       draft = res.doc || {};
       draft.fileId = res.fileId;
+      draft.extra  = res.extra || null;
       drawForm(res.note || '');
       tap('soft');
     })
@@ -1871,8 +2151,17 @@ function drawForm(note){
   var owners = OWNERS.map(function(o){ return { v: o.key, t: o.label }; });
   var cats   = (CATS[draft.owner] || []).map(function(c){ return { v: c.key, t: c.label }; });
 
+  var x = draft.extra || {};
+  var seen = [];
+  if (x.reply)  seen.push((x.kind === 'счёт' ? 'Оплатить до ' : 'Ответить до ') + fmtDay(x.reply));
+  if (x.amount) seen.push('Сумма ' + x.amount);
+
   el('addBody').innerHTML =
     (note ? '<div class="notice">' + esc(note) + '</div>' : '') +
+    (x.summary || seen.length
+      ? '<div class="memo sum"><b>Что понял бот</b>' + esc(x.summary || '') +
+        (seen.length ? (x.summary ? '<br>' : '') + esc(seen.join(' · ')) : '') + '</div>'
+      : '') +
     field('f_name', 'Название документа', draft.name) +
     picker('f_owner', 'Кому принадлежит', owners, draft.owner) +
     picker('f_cat',   'Папка',            cats,   draft.cat) +
@@ -1962,9 +2251,12 @@ function updateHead(name){
 
   if (name === 'deadlines' && rows.length) {
     var c = counts();
-    el('subtitle').textContent = c.over
+    var due = replyList().filter(function(r){ return r.replyDays !== null && r.replyDays <= 7; }).length;
+    el('subtitle').textContent = due
+      ? 'Ответить или оплатить на неделе: ' + due
+      : c.over
       ? 'Требуют внимания: ' + c.over
-      : (c.soon ? 'Скоро истекает: ' + c.soon : 'Всё в порядке, ' + rows.length + ' документов');
+      : (c.soon ? 'Скоро истекает: ' + c.soon : 'Всё в порядке, ' + plural(rows.length));
   } else if (name === 'archive' && rows.length) {
     var o = navOwner ? ownerOf(navOwner) : null;
     var c = (o && navCat) ? catOf(navOwner, navCat) : null;

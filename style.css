@@ -714,3 +714,37 @@ h2.owh .av{flex:0 0 26px;height:26px;border-radius:9px;font-size:12.5px}
   .act2{padding:10px 0 8px}
   .act2 span{font-size:8.6px;letter-spacing:-.02em}
 }
+
+/* ── письма и счета (сборка 21) ── */
+.sheet .sub.pills{display:flex;flex-wrap:wrap;gap:6px}
+.sheet .sub.pills:empty{display:none}
+.sheet .memo.sum{margin:14px 0 0;background:#141b24;border:1px solid var(--line);color:var(--fg);line-height:1.5}
+.sheet .memo.sum b,#addBody .memo.sum b{
+  display:block;margin-bottom:5px;font-size:11px;font-weight:650;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted);
+}
+#addBody .memo.sum{
+  margin:0 0 14px;padding:12px 14px;border-radius:var(--r-md);
+  background:var(--surface);border:1px solid var(--line);font-size:13.5px;line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.refs{margin:14px 0 6px;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.ref{display:flex;align-items:center;gap:10px;padding:8px 4px 8px 13px;border-top:1px solid var(--line)}
+.ref:first-child{border-top:none}
+.ref .k{flex:0 0 36%;min-width:0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.ref .v{flex:1;min-width:0;font-size:14px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+  -webkit-user-select:text;user-select:text}
+.ref .cp{
+  flex:0 0 auto;width:40px;height:40px;border:none;background:none;color:var(--accent);
+  border-radius:10px;display:grid;place-items:center;cursor:pointer;
+}
+.ref .cp:active{background:var(--raised)}
+.ref .cp svg{width:18px;height:18px;stroke-width:1.8}
+.txthit .snip{
+  margin-top:5px;font-size:12.5px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+}
+.txthit .snip mark{background:rgba(79,140,255,.22);color:var(--fg);border-radius:3px;padding:0 1px}
+.txtwait{text-align:center;margin:14px 0}
+.seg.per{margin:10px 0 14px}
+.seg.per b{padding:8px 4px;font-size:12px}
