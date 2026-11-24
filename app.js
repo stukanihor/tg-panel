@@ -1032,6 +1032,10 @@ function editSheet(r){
         if (r.link) delete previews[r.link];
         closeSheet();
         tap('medium');
+        // Карточка в реестре сохранена в любом случае, а вот файл на Drive
+        // мог не переименоваться — об этом надо сказать, а не молчать.
+        if (res.fileErr) toast('Карточка сохранена, но файл на Drive не переименован: ' + res.fileErr, 6000);
+        else if (res.file) toast('Файл на Drive: ' + res.file, 3500);
         boot();
       })
       .catch(function(e){
